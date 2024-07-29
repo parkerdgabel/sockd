@@ -1,3 +1,3 @@
-module parkerdgabel/sock-runtime
+module parkerdgabel/sockd
 
 go 1.22.5
