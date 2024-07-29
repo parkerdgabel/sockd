@@ -50,6 +50,12 @@ func TestCgroup_SetMemoryLimit(t *testing.T) {
 }
 
 func TestCgroup_AddPid(t *testing.T) {
+	pool, err := NewPool("test")
+	defer pool.Destroy()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+
 	tests := []struct {
 		name    string
 		cg      *Cgroup
@@ -57,14 +63,18 @@ func TestCgroup_AddPid(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "Add valid PID",
-			cg:      &Cgroup{},
+			name: "Add valid PID",
+			cg: &Cgroup{
+				pool: pool,
+			},
 			pid:     "1234",
 			wantErr: false,
 		},
 		{
-			name:    "Add invalid PID",
-			cg:      &Cgroup{},
+			name: "Add invalid PID",
+			cg: &Cgroup{
+				pool: pool,
+			},
 			pid:     "invalid-pid",
 			wantErr: true,
 		},
@@ -74,6 +84,36 @@ func TestCgroup_AddPid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.cg.AddPid(tt.pid); (err != nil) != tt.wantErr {
 				t.Errorf("Cgroup.AddPid() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+		})
+	}
+}
+
+func TestCgroup_Pause(t *testing.T) {
+	pool, err := NewPool("test")
+	defer pool.Destroy()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	tests := []struct {
+		name    string
+		cg      *Cgroup
+		wantErr bool
+	}{
+		{
+			name: "Pause cgroup",
+			cg: &Cgroup{
+				pool: pool,
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.cg.Pause(); (err != nil) != tt.wantErr {
+				t.Errorf("Cgroup.Pause() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

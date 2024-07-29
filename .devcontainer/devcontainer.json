@@ -9,9 +9,7 @@
 		"ghcr.io/devcontainers/features/github-cli:1": {},
 		"ghcr.io/devcontainers/features/go:1": {}
 	},
-
-	// Features to add to the dev container. More info: https://containers.dev/features.
-	// "features": {},
+	"runArgs": ["--privileged"],
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
@@ -28,9 +26,11 @@
 	},
 
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
-	// "remoteUser": "root"
+	"remoteUser": "root",
 	"mounts": [
 		 "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind"
 	],
-	"postCreateCommand": "git config --global --add safe.directory /workspaces/sock-runtime"
+
+	"postStartCommand": "git config --global --add safe.directory /workspaces/sockd && mkdir -p /sys/fs/cgroup/init && (xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || true) && sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers  > /sys/fs/cgroup/cgroup.subtree_control"
+
 }

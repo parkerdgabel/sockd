@@ -7,11 +7,18 @@ import (
 	"path"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // if there are fewer than CGROUP_RESERVE available, more will be created.
 // If there are more than 2*CGROUP_RESERVE available, they'll be released.
-const CGROUP_RESERVE = 16
+const (
+	CGROUP_RESERVE = 16
+	SubTreeControl = "cgroup.subtree_control"
+	Controller     = "cgroup.controller"
+	CgroupPath     = "/sys/fs/cgroup"
+	Controllers    = "+pids +io +memory +cpu"
+)
 
 type Pool struct {
 	Name     string
@@ -43,8 +50,8 @@ func NewPool(name string) (*Pool, error) {
 	}
 
 	// Make controllers available to child groups
-	rpath := fmt.Sprintf("%s/cgroup.subtree_control", groupPath)
-	if err := os.WriteFile(rpath, []byte("+pids +io +memory +cpu"), os.ModeAppend); err != nil {
+	rpath := fmt.Sprintf("%s/%s", groupPath, SubTreeControl)
+	if err := os.WriteFile(rpath, []byte(Controllers), os.ModeAppend); err != nil {
 		return nil, fmt.Errorf("WriteFile %s: %s", rpath, err)
 	}
 	go pool.cgTask()
@@ -62,7 +69,7 @@ func (pool *Pool) NewCgroup() *Cgroup {
 	}
 
 	groupPath := cg.GroupPath()
-	if err := syscall.Mkdir(groupPath, 0700); err != nil {
+	if err := os.Mkdir(groupPath, 0700); err != nil {
 		panic(fmt.Errorf("Mkdir %s: %s", groupPath, err))
 	}
 
@@ -130,6 +137,30 @@ Empty:
 	}
 
 	done <- true
+}
+
+// Destroy this entire cgroup pool
+func (pool *Pool) Destroy() {
+	// signal cgTask, then wait for it to finish
+	ch := make(chan bool)
+	pool.quit <- ch
+	<-ch
+
+	// Destroy cgroup for this entire pool
+	gpath := pool.GroupPath()
+	pool.printf("Destroying cgroup pool with path \"%s\"", gpath)
+	for i := 100; i >= 0; i-- {
+		if err := syscall.Rmdir(gpath); err != nil {
+			if i == 0 {
+				panic(fmt.Errorf("Rmdir %s: %s", gpath, err))
+			}
+
+			pool.printf("cgroup pool Rmdir failed, trying again in 5ms")
+			time.Sleep(5 * time.Millisecond)
+		} else {
+			break
+		}
+	}
 }
 
 // add ID to each log message so we know which logs correspond to
