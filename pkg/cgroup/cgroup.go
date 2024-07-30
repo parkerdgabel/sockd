@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+type CgroupError struct {
+	resource string
+	err      error
+}
+
+func (e *CgroupError) Error() string {
+	return fmt.Sprintf("Cgroup error: %s: %v", e.resource, e.err)
+}
+
 type Cgroup struct {
 	name       string
 	pool       *Pool
@@ -37,53 +46,53 @@ func (cg *Cgroup) SetMemoryLimit(mb int) {
 	cg.memLimitMB = mb
 }
 
-func (cg *Cgroup) Release() {
-	// if there's room in the recycled channel, add it there.
-	// Otherwise, just delete it.
-	for i := 100; i >= 0; i-- {
-		pids, err := cg.GetPIDs()
+func (cg *Cgroup) Release() error {
+	// Retry logic to ensure the cgroup is empty before releasing
+	for retries := 100; retries > 0; retries-- {
+		pids, err := cg.PIDs()
 		if err != nil {
-			panic(err)
-		} else if len(pids) > 0 {
-			if i == 0 {
-				panic(fmt.Errorf("Cannot release cgroup that contains processes: %v", pids))
-			}
-
-			cg.printf("cgroup Rmdir failed, trying again in 5ms")
-			time.Sleep(5 * time.Millisecond)
-		} else {
+			return &CgroupError{resource: "cgroup.procs", err: err}
+		}
+		if len(pids) == 0 {
 			break
 		}
+		if retries == 1 {
+			return &CgroupError{resource: "cgroup.procs", err: fmt.Errorf("cgroup not empty")}
+		}
+		cg.printf("cgroup Rmdir failed, trying again in 5ms")
+		time.Sleep(5 * time.Millisecond)
 	}
 
 	select {
 	case cg.pool.recycled <- cg:
 		cg.printf("release and recycle")
-		return
 	default:
+		cg.printf("release and destroy")
+		if err := cg.Destroy(); err != nil {
+			return &CgroupError{resource: "cgroup.procs", err: err}
+		}
 	}
 
-	cg.printf("release and Destroy")
-	cg.Destroy()
+	return nil
 }
 
 // Destroy this cgroup
-func (cg *Cgroup) Destroy() {
+func (cg *Cgroup) Destroy() error {
 	gpath := cg.GroupPath()
 	cg.printf("Destroying cgroup with path \"%s\"", gpath)
 
-	for i := 100; i >= 0; i-- {
+	for retries := 100; retries > 0; retries-- {
 		if err := syscall.Rmdir(gpath); err != nil {
-			if i == 0 {
-				panic(fmt.Errorf("Rmdir(2) %s: %s", gpath, err))
+			if retries == 1 {
+				return &CgroupError{resource: gpath, err: err}
 			}
-
 			cg.printf("cgroup Rmdir failed, trying again in 5ms")
 			time.Sleep(5 * time.Millisecond)
 		} else {
 			break
 		}
 	}
+	return nil
 }
 
 // MemoryLimit returns the memory limit for the cgroup
@@ -99,16 +108,18 @@ func (cg *Cgroup) TryWriteString(resource string, val string) error {
 	return os.WriteFile(cg.ResourcePath(resource), []byte(val), os.ModeAppend)
 }
 
-func (cg *Cgroup) WriteInt(resource string, val int64) {
+func (cg *Cgroup) WriteInt(resource string, val int64) error {
 	if err := cg.TryWriteInt(resource, val); err != nil {
-		panic(fmt.Sprintf("Error writing %v to %s: %v", val, resource, err))
+		return &CgroupError{resource: resource, err: err}
 	}
+	return nil
 }
 
-func (cg *Cgroup) WriteString(resource string, val string) {
+func (cg *Cgroup) WriteString(resource string, val string) error {
 	if err := cg.TryWriteString(resource, val); err != nil {
-		panic(fmt.Sprintf("Error writing %v to %s: %v", val, resource, err))
+		return &CgroupError{resource: resource, err: err}
 	}
+	return nil
 }
 
 func (cg *Cgroup) TryReadIntKV(resource string, key string) (int64, error) {
@@ -143,27 +154,29 @@ func (cg *Cgroup) TryReadInt(resource string) (int64, error) {
 	return val, nil
 }
 
-func (cg *Cgroup) ReadInt(resource string) int64 {
+func (cg *Cgroup) ReadInt(resource string) (int64, error) {
 	val, err := cg.TryReadInt(resource)
 
 	if err != nil {
-		panic(err)
+		return 0, &CgroupError{resource: resource, err: err}
 	}
 
-	return val
+	return val, nil
 }
 
 func (cg *Cgroup) AddPid(pid string) error {
 	err := os.WriteFile(cg.ResourcePath("cgroup.procs"), []byte(pid), os.ModeAppend)
 	if err != nil {
-		return err
+		return &CgroupError{resource: "cgroup.procs", err: err}
 	}
 
 	return nil
 }
 
 func (cg *Cgroup) setFreezeState(state int64) error {
-	cg.WriteInt("cgroup.freeze", state)
+	if err := cg.WriteInt("cgroup.freeze", state); err != nil {
+		return &CgroupError{resource: "cgroup.freeze", err: err}
+	}
 
 	timeout := 5 * time.Second
 
@@ -171,7 +184,7 @@ func (cg *Cgroup) setFreezeState(state int64) error {
 	for {
 		freezerState, err := cg.TryReadInt("cgroup.freeze")
 		if err != nil {
-			return fmt.Errorf("failed to check self_freezing state :: %v", err)
+			return &CgroupError{resource: "cgroup.freeze", err: err}
 		}
 
 		if freezerState == state {
@@ -179,7 +192,7 @@ func (cg *Cgroup) setFreezeState(state int64) error {
 		}
 
 		if time.Since(start) > timeout {
-			return fmt.Errorf("cgroup stuck on %v after %v (should be %v)", freezerState, timeout, state)
+			return &CgroupError{resource: "cgroup.freeze", err: fmt.Errorf("timeout waiting for freeze state to change")}
 		}
 
 		time.Sleep(1 * time.Millisecond)
@@ -188,7 +201,10 @@ func (cg *Cgroup) setFreezeState(state int64) error {
 
 // get mem usage in MB
 func (cg *Cgroup) GetMemUsageMB() int {
-	usage := cg.ReadInt("memory.current")
+	usage, err := cg.ReadInt("memory.current")
+	if err != nil {
+		panic(err)
+	}
 
 	// round up to nearest MB
 	mb := int64(1024 * 1024)
@@ -201,14 +217,16 @@ func (cg *Cgroup) GetMemLimitMB() int {
 }
 
 // set mem limit in MB
-func (cg *Cgroup) SetMemLimitMB(mb int) {
+func (cg *Cgroup) SetMemLimitMB(mb int) error {
 	if mb == cg.memLimitMB {
-		return
+		return nil
 	}
 
 	limitPath := cg.ResourcePath("memory.max")
 	bytes := int64(mb) * 1024 * 1024
-	cg.WriteInt("memory.max", bytes)
+	if err := cg.WriteInt("memory.max", bytes); err != nil {
+		return &CgroupError{resource: "memory.max", err: err}
+	}
 
 	// cgroup v1 documentation recommends reading back limit after
 	// writing, because it is only a suggestion (e.g., may get
@@ -232,13 +250,17 @@ func (cg *Cgroup) SetMemLimitMB(mb int) {
 	}
 
 	cg.memLimitMB = mb
+	return nil
 }
 
 // percent of a core
-func (cg *Cgroup) SetCPUPercent(percent int) {
+func (cg *Cgroup) SetCPUPercent(percent int) error {
 	period := 100000 // 100 ms
 	quota := period * percent / 100
-	cg.WriteString("cpu.max", fmt.Sprintf("%d %d", quota, period))
+	if err := cg.WriteString("cpu.max", fmt.Sprintf("%d %d", quota, period)); err != nil {
+		return &CgroupError{resource: "cpu.max", err: err}
+	}
+	return nil
 }
 
 // Freeze processes in the cgroup
@@ -252,7 +274,7 @@ func (cg *Cgroup) Unpause() error {
 }
 
 // Get the IDs of all processes running in this cgroup
-func (cg *Cgroup) GetPIDs() ([]string, error) {
+func (cg *Cgroup) PIDs() ([]string, error) {
 	procsPath := cg.ResourcePath("cgroup.procs")
 	pids, err := os.ReadFile(procsPath)
 	if err != nil {
@@ -273,8 +295,11 @@ func (cg *Cgroup) CgroupProcsPath() string {
 
 // KillAllProcs stops all processes inside the cgroup
 // Note, the CG most be paused beforehand
-func (cg *Cgroup) KillAllProcs() {
-	cg.WriteInt("cgroup.kill", 1)
+func (cg *Cgroup) KillAllProcs() error {
+	if err := cg.WriteInt("cgroup.kill", 1); err != nil {
+		return &CgroupError{resource: "cgroup.kill", err: err}
+	}
+	return nil
 }
 
 // GroupPath returns the path to the Cgroup pool for OpenLambda
