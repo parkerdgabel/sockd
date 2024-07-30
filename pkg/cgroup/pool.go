@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+type CgroupPoolError struct {
+	resource string
+	err      error
+}
+
+func (e *CgroupPoolError) Error() string {
+	return "CgroupPool error: " + e.resource + ": " + e.err.Error()
+}
+
 // if there are fewer than CGROUP_RESERVE available, more will be created.
 // If there are more than 2*CGROUP_RESERVE available, they'll be released.
 const (
@@ -46,13 +55,13 @@ func NewPool(name string) (*Pool, error) {
 	groupPath := pool.GroupPath()
 	pool.printf("create %s", groupPath)
 	if err := syscall.Mkdir(groupPath, 0700); err != nil {
-		return nil, fmt.Errorf("Mkdir %s: %s", groupPath, err)
+		return nil, &CgroupPoolError{"Mkdir", err}
 	}
 
 	// Make controllers available to child groups
 	rpath := fmt.Sprintf("%s/%s", groupPath, SubTreeControl)
 	if err := os.WriteFile(rpath, []byte(Controllers), os.ModeAppend); err != nil {
-		return nil, fmt.Errorf("WriteFile %s: %s", rpath, err)
+		return nil, &CgroupPoolError{"WriteFile", err}
 	}
 	go pool.cgTask()
 
@@ -60,7 +69,7 @@ func NewPool(name string) (*Pool, error) {
 }
 
 // NewCgroup creates a new CGroup in the pool
-func (pool *Pool) NewCgroup() *Cgroup {
+func (pool *Pool) NewCgroup() (*Cgroup, error) {
 	pool.nextID++
 
 	cg := &Cgroup{
@@ -70,11 +79,11 @@ func (pool *Pool) NewCgroup() *Cgroup {
 
 	groupPath := cg.GroupPath()
 	if err := os.Mkdir(groupPath, 0700); err != nil {
-		panic(fmt.Errorf("Mkdir %s: %s", groupPath, err))
+		return nil, &CgroupError{"Mkdir", err}
 	}
 
 	cg.printf("created")
-	return cg
+	return cg, nil
 }
 
 func (pool *Pool) cgTask() {
@@ -105,7 +114,7 @@ Loop:
 			}
 		default:
 			// t := common.T0("fresh-cgroup")
-			cg = pool.NewCgroup()
+			cg, _ := pool.NewCgroup()
 			// TODO: set up Config for max procs, memory limits, etc.
 			cg.WriteInt("pids.max", int64(10))
 			cg.WriteInt("memory.swap.max", int64(0))
@@ -140,7 +149,7 @@ Empty:
 }
 
 // Destroy this entire cgroup pool
-func (pool *Pool) Destroy() {
+func (pool *Pool) Destroy() error {
 	// signal cgTask, then wait for it to finish
 	ch := make(chan bool)
 	pool.quit <- ch
@@ -152,7 +161,7 @@ func (pool *Pool) Destroy() {
 	for i := 100; i >= 0; i-- {
 		if err := syscall.Rmdir(gpath); err != nil {
 			if i == 0 {
-				panic(fmt.Errorf("Rmdir %s: %s", gpath, err))
+				return &CgroupPoolError{resource: gpath, err: err}
 			}
 
 			pool.printf("cgroup pool Rmdir failed, trying again in 5ms")
@@ -161,6 +170,7 @@ func (pool *Pool) Destroy() {
 			break
 		}
 	}
+	return nil
 }
 
 // add ID to each log message so we know which logs correspond to

@@ -36,7 +36,10 @@ func TestPool_NewCgroup(t *testing.T) {
 	}
 	defer pool.Destroy()
 
-	cgroup := pool.NewCgroup()
+	cgroup, err := pool.NewCgroup()
+	if err != nil {
+		t.Errorf("NewCgroup() error = %v", err)
+	}
 	if cgroup == nil {
 		t.Errorf("NewCgroup() returned nil")
 	}
