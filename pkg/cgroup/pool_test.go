@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPool_NewPool(t *testing.T) {
@@ -25,23 +26,6 @@ func TestPool_NewPool(t *testing.T) {
 			}
 			pool.Destroy()
 		})
-	}
-}
-
-func TestPool_NewCgroup(t *testing.T) {
-	pool, err := NewPool("test-pool")
-
-	if err != nil {
-		t.Fatalf("NewPool() error = %v", err)
-	}
-	defer pool.Destroy()
-
-	cgroup, err := pool.NewCgroup()
-	if err != nil {
-		t.Errorf("NewCgroup() error = %v", err)
-	}
-	if cgroup == nil {
-		t.Errorf("NewCgroup() returned nil")
 	}
 }
 
@@ -69,9 +53,27 @@ func TestPool_GroupPath(t *testing.T) {
 	}
 	defer pool.Destroy()
 
-	expectedPath := path.Join(CgroupPath, "test-pool")
+	expectedPath := path.Join(CgroupPath, "cgroup-test-pool")
 	if pool.GroupPath() != expectedPath {
 		t.Errorf("GroupPath() = %v, want %v", pool.GroupPath(), expectedPath)
+	}
+}
+
+func TestPool_RetrieveCgroup(t *testing.T) {
+	pool, err := NewPool("test-pool")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer pool.Destroy()
+
+	timeout := time.Duration(1) * time.Second
+	cgroup, err := pool.RetrieveCgroup(timeout)
+	if err != nil {
+		t.Fatalf("RetrieveCgroup() error = %v", err)
+	}
+
+	if cgroup.pool != pool {
+		t.Errorf("RetrieveCgroup() returned a cgroup with the wrong pool")
 	}
 }
 

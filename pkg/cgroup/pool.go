@@ -114,7 +114,7 @@ Loop:
 			}
 		default:
 			// t := common.T0("fresh-cgroup")
-			cg, _ := pool.NewCgroup()
+			cg, _ = pool.NewCgroup()
 			// TODO: set up Config for max procs, memory limits, etc.
 			cg.WriteInt("pids.max", int64(10))
 			cg.WriteInt("memory.swap.max", int64(0))
@@ -146,6 +146,16 @@ Empty:
 	}
 
 	done <- true
+}
+
+// RetrieveCg retrieves a Cgroup from the pool with a timeout
+func (pool *Pool) RetrieveCgroup(timeout time.Duration) (*Cgroup, error) {
+	select {
+	case cg := <-pool.ready:
+		return cg, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("timeout waiting to retrieve Cgroup")
+	}
 }
 
 // Destroy this entire cgroup pool
