@@ -40,6 +40,7 @@ var SHARED uintptr = uintptr(syscall.MS_SHARED)
 type Container struct {
 	id         string
 	meta       *Meta
+	pool       *Pool
 	runtime    Runtime
 	rootDir    string
 	codeDir    string
@@ -144,7 +145,7 @@ func (c *Container) Pause() error {
 	newLimit := c.cgroup.GetMemUsageMB() + 1
 	if newLimit < oldLimit {
 		c.cgroup.SetMemLimitMB(newLimit)
-		c.pool.mem.adjustAvailableMB(oldLimit - newLimit)
+		c.pool.mem.AdjustAvailableMB(oldLimit - newLimit)
 	}
 	return nil
 }
