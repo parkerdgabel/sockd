@@ -45,8 +45,8 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup) *Container {
-	return &Container{
+func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup) *Container {
+	c := &Container{
 		id:         id,
 		rootDir:    rootDir,
 		codeDir:    codeDir,
@@ -55,6 +55,15 @@ func NewContainer(id string, rootDir, codeDir, scratchDir string, cgroup *cgroup
 		client:     &http.Client{},
 		children:   make(map[string]*Container),
 	}
+	if err := c.populateRoot(baseImageDir); err != nil {
+		log.Printf("failed to populate root: %v", err)
+		return nil
+	}
+	if err := c.StartClient(); err != nil {
+		log.Printf("failed to start client: %v", err)
+		return nil
+	}
+	return c
 }
 
 func (c *Container) ID() string {
@@ -120,6 +129,13 @@ func (c *Container) StopClient() {
 	c.client.CloseIdleConnections()
 }
 
+func (c *Container) Destroy() error {
+	if err := c.cgroup.Pause(); err != nil {
+		return &ContainerError{container: c.id, err: err}
+	}
+	return c.decCgRefCount()
+}
+
 func (c *Container) StartContainer(cmd *exec.Cmd, out *os.File, errOut *os.File) error {
 	cmd.SysProcAttr.Chroot = c.rootDir
 	path := c.cgroup.CgroupProcsPath()
@@ -164,6 +180,88 @@ func (c *Container) Unpause() error {
 	if err := c.cgroup.Unpause(); err != nil {
 		return &ContainerError{container: c.id, err: err}
 	}
+	return nil
+}
+
+func (c *Container) reactorSock() string {
+	return fmt.Sprintf("%s/reactor.sock", c.scratchDir)
+}
+
+// fork a new process from the Zygote in container, relocate it to be the server in dst
+func (c *Container) Fork(dst *Container) (err error) {
+	spareMB := c.cgroup.GetMemLimitMB() - c.cgroup.GetMemUsageMB()
+	if spareMB < 3 {
+		return fmt.Errorf("only %vMB of spare memory in parent, rejecting fork request (need at least 3MB)", spareMB)
+	}
+
+	// increment reference count before we start any processes
+	c.children[dst.ID()] = dst
+	newCount := atomic.AddInt32(&c.cgRefCount, 1)
+
+	if newCount == 0 {
+		panic("cgRefCount was already 0")
+	}
+
+	origPids, err := c.cgroup.PIDs()
+	if err != nil {
+		return err
+	}
+
+	root, err := os.Open(dst.RootDir())
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	cg := dst.cgroup
+	cgProcs, err := os.OpenFile(cg.CgroupProcsPath(), os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer cgProcs.Close()
+
+	err = c.forkRequest(root, cgProcs)
+	if err != nil {
+		return err
+	}
+
+	// move new PIDs to new cgroup.
+	//
+	// Make multiple passes in case new processes are being
+	// spawned (TODO: better way to do this?  This lets a forking
+	// process potentially kill our cache entry, which isn't
+	// great).
+
+	for {
+		currPids, err := c.cgroup.PIDs()
+		if err != nil {
+			return err
+		}
+
+		moved := 0
+
+		for _, pid := range currPids {
+			isOrig := false
+			for _, origPid := range origPids {
+				if pid == origPid {
+					isOrig = true
+					break
+				}
+			}
+			if !isOrig {
+				c.printf("move PID %v from CG %v to CG %v\n", pid, c.cgroup.Name(), dst.cgroup.Name())
+				if err = dst.cgroup.AddPid(pid); err != nil {
+					return err
+				}
+				moved++
+			}
+		}
+
+		if moved == 0 {
+			break
+		}
+	}
+
 	return nil
 }
 
