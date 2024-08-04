@@ -111,7 +111,7 @@ func (c *Container) RemoveChild(child *Container) {
 }
 
 func (c *Container) StartClient() error {
-	sockPath := filepath.Join(c.scratchDir, "reactor.sock")
+	sockPath := c.reactorSock()
 	if len(sockPath) > 108 {
 		return &ContainerError{container: c.id, err: fmt.Errorf("socket path length cannot exceed 108 characters (try moving cluster closer to the root directory")}
 	}
