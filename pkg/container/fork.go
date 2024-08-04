@@ -59,7 +59,7 @@ func sendRootFD(sockPath string, chrootFD, memFD int) (int, error) {
 // forkRequest sends the namespace file descriptors for the targetPid process
 // and the passed package list to a lambda server listening on the Unix socket at sockPath.
 func (c *Container) forkRequest(rootDir *os.File, memCG *os.File) error {
-	status, err := sendRootFD(c.reactorSock(), int(rootDir.Fd()), int(memCG.Fd()))
+	status, err := sendRootFD(c.commsSock(), int(rootDir.Fd()), int(memCG.Fd()))
 	if err != nil {
 		return err
 	}

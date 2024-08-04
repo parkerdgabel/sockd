@@ -39,6 +39,7 @@ type Container struct {
 	scratchDir string
 	cgroup     *cgroup.Cgroup
 	client     *http.Client
+	cmd        *exec.Cmd
 	// 1 for self, plus 1 for each child (we can't release memory
 	// until all descendants are dead, because they share the
 	// pages of this Container, but this is the only container
@@ -48,13 +49,14 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup) *Container {
+func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, cmd *exec.Cmd) *Container {
 	c := &Container{
 		id:         id,
 		rootDir:    rootDir,
 		codeDir:    codeDir,
 		scratchDir: scratchDir,
 		cgroup:     cgroup,
+		cmd:        cmd,
 		client:     &http.Client{},
 		children:   make(map[string]*Container),
 	}
@@ -112,7 +114,7 @@ func (c *Container) RemoveChild(child *Container) {
 }
 
 func (c *Container) StartClient() error {
-	sockPath := c.reactorSock()
+	sockPath := c.commsSock()
 	if len(sockPath) > 108 {
 		return &ContainerError{container: c.id, err: fmt.Errorf("socket path length cannot exceed 108 characters (try moving cluster closer to the root directory")}
 	}
@@ -139,23 +141,20 @@ func (c *Container) Destroy() error {
 	return c.decCgRefCount()
 }
 
-func (c *Container) StartContainer(cmd *exec.Cmd, out *os.File, errOut *os.File) error {
-	cmd.SysProcAttr.Chroot = c.rootDir
-	cmd.SysProcAttr.Cloneflags = UNSHARE
+func (c *Container) StartContainer() error {
+	c.cmd.SysProcAttr.Chroot = c.rootDir
+	c.cmd.SysProcAttr.Cloneflags = UNSHARE
 	path := c.cgroup.CgroupProcsPath()
 	fd, err := syscall.Open(path, syscall.O_WRONLY, 0600)
 	if err != nil {
 		return &ContainerError{container: c.id, err: fmt.Errorf("failed to open cgroup.procs file: %v", err)}
 	}
-	cmd.ExtraFiles = []*os.File{os.NewFile(uintptr(fd), path)}
-	cmd.Env = []string{} // for security, DO NOT expose host env to guest
-	cmd.Stdout = out
-	cmd.Stderr = errOut
-
-	if err := cmd.Start(); err != nil {
+	c.cmd.ExtraFiles = []*os.File{os.NewFile(uintptr(fd), path)}
+	c.cmd.Env = []string{} // for security, DO NOT expose host env to guest
+	if err := c.cmd.Start(); err != nil {
 		return &ContainerError{container: c.id, err: fmt.Errorf("failed to start container: %v", err)}
 	}
-	return cmd.Wait() // Command passed in is expected to fork and exec
+	return c.cmd.Wait() // Command passed in is expected to fork and exec
 }
 
 func (c *Container) Pause() error {
@@ -187,8 +186,8 @@ func (c *Container) Unpause() error {
 	return nil
 }
 
-func (c *Container) reactorSock() string {
-	return fmt.Sprintf("%s/reactor.sock", c.scratchDir)
+func (c *Container) commsSock() string {
+	return fmt.Sprintf("%s/comms.sock", c.scratchDir)
 }
 
 // fork a new process from the Zygote in container, relocate it to be the server in dst
