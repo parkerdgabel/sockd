@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type ContainerError struct {
@@ -136,7 +138,24 @@ func (c *Container) Destroy() error {
 	return c.decCgRefCount()
 }
 
+func (c *Container) unshare() error {
+	if err := exec.Command("chroot", c.rootDir).Run(); err != nil {
+		return &ContainerError{container: c.id, err: fmt.Errorf("chroot failed: %v", err)}
+	}
+	flags := unix.CLONE_NEWUTS | unix.CLONE_NEWPID | unix.CLONE_NEWIPC
+
+	// Call the unshare function
+	err := unix.Unshare(flags)
+	if err != nil {
+		return &ContainerError{container: c.id, err: fmt.Errorf("unshare failed: %v", err)}
+	}
+	return nil
+}
+
 func (c *Container) StartContainer(cmd *exec.Cmd, out *os.File, errOut *os.File) error {
+	if err := c.unshare(); err != nil {
+		return err
+	}
 	cmd.SysProcAttr.Chroot = c.rootDir
 	path := c.cgroup.CgroupProcsPath()
 	fd, err := syscall.Open(path, syscall.O_WRONLY, 0600)
