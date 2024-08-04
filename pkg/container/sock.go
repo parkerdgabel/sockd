@@ -6,9 +6,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"parkerdgabel/sockd/pkg/cgroup"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -22,16 +24,6 @@ func (e *ContainerError) Error() string {
 	return "Container error: " + e.container + ": " + e.err.Error()
 }
 
-type Runtime string
-
-const (
-	Java   Runtime = "java"
-	Python Runtime = "python"
-	Node   Runtime = "node"
-	Go     Runtime = "go"
-	Ruby   Runtime = "ruby"
-)
-
 var BIND uintptr = uintptr(syscall.MS_BIND)
 var BIND_RO uintptr = uintptr(syscall.MS_BIND | syscall.MS_RDONLY | syscall.MS_REMOUNT)
 var PRIVATE uintptr = uintptr(syscall.MS_PRIVATE)
@@ -39,9 +31,6 @@ var SHARED uintptr = uintptr(syscall.MS_SHARED)
 
 type Container struct {
 	id         string
-	meta       *Meta
-	pool       *Pool
-	runtime    Runtime
 	rootDir    string
 	codeDir    string
 	scratchDir string
@@ -56,11 +45,9 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(id string, meta *Meta, runtime Runtime, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup) *Container {
+func NewContainer(id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup) *Container {
 	return &Container{
 		id:         id,
-		meta:       meta,
-		runtime:    runtime,
 		rootDir:    rootDir,
 		codeDir:    codeDir,
 		scratchDir: scratchDir,
@@ -72,14 +59,6 @@ func NewContainer(id string, meta *Meta, runtime Runtime, rootDir, codeDir, scra
 
 func (c *Container) ID() string {
 	return c.id
-}
-
-func (c *Container) Meta() *Meta {
-	return c.meta
-}
-
-func (c *Container) Runtime() Runtime {
-	return c.runtime
 }
 
 func (c *Container) RootDir() string {
@@ -137,6 +116,28 @@ func (c *Container) StartClient() error {
 	return nil
 }
 
+func (c *Container) StopClient() {
+	c.client.CloseIdleConnections()
+}
+
+func (c *Container) StartContainer(cmd *exec.Cmd, out *os.File, errOut *os.File) error {
+	cmd.SysProcAttr.Chroot = c.rootDir
+	path := c.cgroup.CgroupProcsPath()
+	fd, err := syscall.Open(path, syscall.O_WRONLY, 0600)
+	if err != nil {
+		return &ContainerError{container: c.id, err: fmt.Errorf("failed to open cgroup.procs file: %v", err)}
+	}
+	cmd.ExtraFiles = []*os.File{os.NewFile(uintptr(fd), path)}
+	cmd.Env = []string{} // for security, DO NOT expose host env to guest
+	cmd.Stdout = out
+	cmd.Stderr = errOut
+
+	if err := cmd.Start(); err != nil {
+		return &ContainerError{container: c.id, err: fmt.Errorf("failed to start container: %v", err)}
+	}
+	return cmd.Wait() // Command passed in is expected to fork and exec
+}
+
 func (c *Container) Pause() error {
 	if err := c.cgroup.Pause(); err != nil {
 		return &ContainerError{container: c.id, err: err}
@@ -144,10 +145,61 @@ func (c *Container) Pause() error {
 	oldLimit := c.cgroup.GetMemLimitMB()
 	newLimit := c.cgroup.GetMemUsageMB() + 1
 	if newLimit < oldLimit {
-		c.cgroup.SetMemLimitMB(newLimit)
-		c.pool.mem.AdjustAvailableMB(oldLimit - newLimit)
+		if err := c.cgroup.SetMemLimitMB(newLimit); err != nil {
+			return &ContainerError{container: c.id, err: err}
+		}
+	}
+	c.client.CloseIdleConnections()
+	return nil
+}
+
+func (c *Container) Unpause() error {
+	oldLimit := c.cgroup.GetMemLimitMB()
+	newLimit := c.cgroup.GetMemUsageMB() - 1
+	if newLimit > oldLimit {
+		if err := c.cgroup.SetMemLimitMB(newLimit); err != nil {
+			return &ContainerError{container: c.id, err: err}
+		}
+	}
+	if err := c.cgroup.Unpause(); err != nil {
+		return &ContainerError{container: c.id, err: err}
 	}
 	return nil
+}
+
+func (c *Container) decCgRefCount() error {
+	newCount := atomic.AddInt32(&c.cgRefCount, -1)
+
+	if newCount < 0 {
+		return &ContainerError{container: c.id, err: fmt.Errorf("cgroup ref count went negative")}
+	}
+
+	if newCount == 0 {
+		if c.cgroup != nil {
+			if err := c.cgroup.KillAllProcs(); err != nil {
+				return &ContainerError{container: c.id, err: err}
+			}
+			if err := c.cgroup.Release(); err != nil {
+				return &ContainerError{container: c.id, err: err}
+			}
+		}
+
+		if err := syscall.Unmount(c.rootDir, syscall.MNT_DETACH); err != nil {
+			return &ContainerError{container: c.id, err: fmt.Errorf("failed to unmount root dir: %v", err)}
+		}
+		if err := os.RemoveAll(c.rootDir); err != nil {
+			return &ContainerError{container: c.id, err: fmt.Errorf("failed to remove root dir: %v", err)}
+		}
+		if c.parent != nil {
+			return c.parent.childExit(c)
+		}
+	}
+	return nil
+}
+
+func (c *Container) childExit(child *Container) error {
+	delete(c.children, child.ID())
+	return c.decCgRefCount()
 }
 
 func (c *Container) populateRoot(baseDir string) error {
