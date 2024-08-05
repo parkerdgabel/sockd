@@ -102,7 +102,7 @@ Loop:
 		// 1. upon fresh creation (things that never change, such as max procs)
 		// 2. after it's been recycled (we need to clean things up that change during use)
 		// 3. some things (e.g., memory limits) need to be done in either case, and may
-		//    depend on the needs of the Sandbox; this happens in pool.GetCg (which is
+		//    depend on the needs of the Container; this happens in pool.GetCg (which is
 		//    fed by this function)
 		select {
 		case cg = <-pool.recycled:
@@ -188,7 +188,7 @@ func (pool *Pool) printf(format string, args ...any) {
 	log.Printf("%s [CGROUP POOL %s]", strings.TrimRight(msg, "\n"), pool.Name)
 }
 
-// GroupPath returns the path to the Cgroup pool for OpenLambda
+// GroupPath returns the path to the Cgroup pool
 func (pool *Pool) GroupPath() string {
 	return fmt.Sprintf("/sys/fs/cgroup/%s", pool.Name)
 }
