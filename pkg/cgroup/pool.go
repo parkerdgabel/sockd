@@ -78,7 +78,7 @@ func (pool *Pool) NewCgroup() (*Cgroup, error) {
 	}
 
 	groupPath := cg.GroupPath()
-	if err := os.Mkdir(groupPath, 0700); err != nil {
+	if err := syscall.Mkdir(groupPath, 0700); err != nil {
 		return nil, &CgroupError{"Mkdir", err}
 	}
 
@@ -113,12 +113,10 @@ Loop:
 				cg.printf("Unpause failed: %s", err)
 			}
 		default:
-			// t := common.T0("fresh-cgroup")
 			cg, _ = pool.NewCgroup()
 			// TODO: set up Config for max procs, memory limits, etc.
 			cg.WriteInt("pids.max", int64(10))
 			cg.WriteInt("memory.swap.max", int64(0))
-			// t.T1()
 		}
 
 		// add cgroup to ready queue

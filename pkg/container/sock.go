@@ -167,7 +167,7 @@ func (c *Container) Pause() error {
 	if err := c.cgroup.Pause(); err != nil {
 		return &ContainerError{container: c.id, err: err}
 	}
-	oldLimit := c.cgroup.GetMemLimitMB()
+	oldLimit := c.cgroup.MemLimitMB()
 	newLimit := c.cgroup.GetMemUsageMB() + 1
 	if newLimit < oldLimit {
 		if err := c.cgroup.SetMemLimitMB(newLimit); err != nil {
@@ -179,7 +179,7 @@ func (c *Container) Pause() error {
 }
 
 func (c *Container) Unpause() error {
-	oldLimit := c.cgroup.GetMemLimitMB()
+	oldLimit := c.cgroup.MemLimitMB()
 	newLimit := c.cgroup.GetMemUsageMB() - 1
 	if newLimit > oldLimit {
 		if err := c.cgroup.SetMemLimitMB(newLimit); err != nil {
@@ -198,7 +198,7 @@ func (c *Container) commsSock() string {
 
 // fork a new process from the Zygote in container, relocate it to be the server in dst
 func (c *Container) Fork(dst *Container) error {
-	spareMB := c.cgroup.GetMemLimitMB() - c.cgroup.GetMemUsageMB()
+	spareMB := c.cgroup.MemLimitMB() - c.cgroup.GetMemUsageMB()
 	if spareMB < 3 {
 		return fmt.Errorf("only %vMB of spare memory in parent, rejecting fork request (need at least 3MB)", spareMB)
 	}
