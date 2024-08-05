@@ -212,7 +212,7 @@ func (cg *Cgroup) GetMemUsageMB() int {
 }
 
 // get mem limit in MB
-func (cg *Cgroup) GetMemLimitMB() int {
+func (cg *Cgroup) MemLimitMB() int {
 	return cg.memLimitMB
 }
 
