@@ -11,6 +11,7 @@ const (
 )
 
 type Meta struct {
+	IsLeaf     bool
 	Installs   []string
 	Imports    []string
 	Runtime    Runtime

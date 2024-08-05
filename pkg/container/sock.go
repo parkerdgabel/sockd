@@ -66,6 +66,10 @@ func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir s
 		log.Printf("failed to populate root: %v", err)
 		return nil
 	}
+	if err := c.bootstrapCode(); err != nil {
+		log.Printf("failed to bootstrap code: %v", err)
+		return nil
+	}
 	if err := c.StartClient(); err != nil {
 		log.Printf("failed to start client: %v", err)
 		return nil
