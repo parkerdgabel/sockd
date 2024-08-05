@@ -36,6 +36,14 @@ func NewImageCache() *ImageCache {
 	}
 }
 
+func (ic *ImageCache) CacheDir() string {
+	return ic.cacheDir
+}
+
+func (ic *ImageCache) Close() {
+	os.RemoveAll(ic.cacheDir)
+}
+
 func (ic *ImageCache) GetImage(name string) (string, bool) {
 	image, ok := ic.images[name]
 	return image, ok
