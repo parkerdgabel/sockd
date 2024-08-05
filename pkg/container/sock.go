@@ -197,7 +197,7 @@ func (c *Container) commsSock() string {
 }
 
 // fork a new process from the Zygote in container, relocate it to be the server in dst
-func (c *Container) Fork(dst *Container) (err error) {
+func (c *Container) Fork(dst *Container) error {
 	spareMB := c.cgroup.GetMemLimitMB() - c.cgroup.GetMemUsageMB()
 	if spareMB < 3 {
 		return fmt.Errorf("only %vMB of spare memory in parent, rejecting fork request (need at least 3MB)", spareMB)
@@ -208,30 +208,30 @@ func (c *Container) Fork(dst *Container) (err error) {
 	newCount := atomic.AddInt32(&c.cgRefCount, 1)
 
 	if newCount == 0 {
-		panic("cgRefCount was already 0")
+		return &ContainerError{container: c.id, err: fmt.Errorf("cgroup ref count went negative")}
 	}
 
 	origPids, err := c.cgroup.PIDs()
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 
 	root, err := os.Open(dst.RootDir())
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 	defer root.Close()
 
 	cg := dst.cgroup
 	cgProcs, err := os.OpenFile(cg.CgroupProcsPath(), os.O_WRONLY, 0600)
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 	defer cgProcs.Close()
 
 	err = c.forkRequest(root, cgProcs)
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 
 	// move new PIDs to new cgroup.
@@ -244,7 +244,7 @@ func (c *Container) Fork(dst *Container) (err error) {
 	for {
 		currPids, err := c.cgroup.PIDs()
 		if err != nil {
-			return err
+			return &ContainerError{container: c.id, err: err}
 		}
 
 		moved := 0
