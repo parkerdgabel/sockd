@@ -39,6 +39,7 @@ type Container struct {
 	scratchDir string
 	cgroup     *cgroup.Cgroup
 	client     *http.Client
+	meta       *Meta
 	cmd        *exec.Cmd
 	// 1 for self, plus 1 for each child (we can't release memory
 	// until all descendants are dead, because they share the
@@ -49,7 +50,7 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, cmd *exec.Cmd) *Container {
+func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta, cmd *exec.Cmd) *Container {
 	c := &Container{
 		id:         id,
 		rootDir:    rootDir,
@@ -58,6 +59,7 @@ func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir s
 		cgroup:     cgroup,
 		cmd:        cmd,
 		client:     &http.Client{},
+		meta:       meta,
 		children:   make(map[string]*Container),
 	}
 	if err := c.populateRoot(baseImageDir); err != nil {
