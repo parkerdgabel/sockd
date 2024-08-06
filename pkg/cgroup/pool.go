@@ -152,7 +152,7 @@ func (pool *Pool) RetrieveCgroup(timeout time.Duration) (*Cgroup, error) {
 	case cg := <-pool.ready:
 		return cg, nil
 	case <-time.After(timeout):
-		return nil, fmt.Errorf("timeout waiting to retrieve Cgroup")
+		return nil, &CgroupPoolError{"timeout", fmt.Errorf("timeout waiting for cgroup")}
 	}
 }
 

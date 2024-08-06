@@ -228,12 +228,12 @@ func (cg *Cgroup) SetMemLimitMB(mb int) error {
 		return &CgroupError{resource: "memory.max", err: err}
 	}
 
-	// cgroup v1 documentation recommends reading back limit after
+	// documentation recommends reading back limit after
 	// writing, because it is only a suggestion (e.g., may get
 	// rounded to page size).
 	//
 	// we don't have a great way of dealing with this now, so
-	// we'll just panic if it is not within some tolerance
+	// we'll just error if it is not within some tolerance
 	limitRaw, err := os.ReadFile(limitPath)
 	if err != nil {
 		return &CgroupError{resource: "memory.max", err: err}
