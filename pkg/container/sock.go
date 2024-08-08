@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"parkerdgabel/sockd/pkg/cgroup"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -39,6 +40,7 @@ type Container struct {
 	scratchDir string
 	cgroup     *cgroup.Cgroup
 	client     *http.Client
+	meta       *Meta
 	cmd        *exec.Cmd
 	// 1 for self, plus 1 for each child (we can't release memory
 	// until all descendants are dead, because they share the
@@ -49,19 +51,27 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, cmd *exec.Cmd) *Container {
+func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta) *Container {
 	c := &Container{
 		id:         id,
 		rootDir:    rootDir,
 		codeDir:    codeDir,
 		scratchDir: scratchDir,
 		cgroup:     cgroup,
-		cmd:        cmd,
 		client:     &http.Client{},
+		meta:       meta,
 		children:   make(map[string]*Container),
 	}
 	if err := c.populateRoot(baseImageDir); err != nil {
 		log.Printf("failed to populate root: %v", err)
+		return nil
+	}
+	if err := c.bootstrapCode(); err != nil {
+		log.Printf("failed to bootstrap code: %v", err)
+		return nil
+	}
+	if err := c.setCommand(); err != nil {
+		log.Printf("failed to set command: %v", err)
 		return nil
 	}
 	if err := c.StartClient(); err != nil {
@@ -161,7 +171,7 @@ func (c *Container) Pause() error {
 	if err := c.cgroup.Pause(); err != nil {
 		return &ContainerError{container: c.id, err: err}
 	}
-	oldLimit := c.cgroup.GetMemLimitMB()
+	oldLimit := c.cgroup.MemLimitMB()
 	newLimit := c.cgroup.GetMemUsageMB() + 1
 	if newLimit < oldLimit {
 		if err := c.cgroup.SetMemLimitMB(newLimit); err != nil {
@@ -173,7 +183,7 @@ func (c *Container) Pause() error {
 }
 
 func (c *Container) Unpause() error {
-	oldLimit := c.cgroup.GetMemLimitMB()
+	oldLimit := c.cgroup.MemLimitMB()
 	newLimit := c.cgroup.GetMemUsageMB() - 1
 	if newLimit > oldLimit {
 		if err := c.cgroup.SetMemLimitMB(newLimit); err != nil {
@@ -191,8 +201,8 @@ func (c *Container) commsSock() string {
 }
 
 // fork a new process from the Zygote in container, relocate it to be the server in dst
-func (c *Container) Fork(dst *Container) (err error) {
-	spareMB := c.cgroup.GetMemLimitMB() - c.cgroup.GetMemUsageMB()
+func (c *Container) Fork(dst *Container) error {
+	spareMB := c.cgroup.MemLimitMB() - c.cgroup.GetMemUsageMB()
 	if spareMB < 3 {
 		return fmt.Errorf("only %vMB of spare memory in parent, rejecting fork request (need at least 3MB)", spareMB)
 	}
@@ -202,30 +212,30 @@ func (c *Container) Fork(dst *Container) (err error) {
 	newCount := atomic.AddInt32(&c.cgRefCount, 1)
 
 	if newCount == 0 {
-		panic("cgRefCount was already 0")
+		return &ContainerError{container: c.id, err: fmt.Errorf("cgroup ref count went negative")}
 	}
 
 	origPids, err := c.cgroup.PIDs()
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 
 	root, err := os.Open(dst.RootDir())
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 	defer root.Close()
 
 	cg := dst.cgroup
 	cgProcs, err := os.OpenFile(cg.CgroupProcsPath(), os.O_WRONLY, 0600)
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 	defer cgProcs.Close()
 
 	err = c.forkRequest(root, cgProcs)
 	if err != nil {
-		return err
+		return &ContainerError{container: c.id, err: err}
 	}
 
 	// move new PIDs to new cgroup.
@@ -238,7 +248,7 @@ func (c *Container) Fork(dst *Container) (err error) {
 	for {
 		currPids, err := c.cgroup.PIDs()
 		if err != nil {
-			return err
+			return &ContainerError{container: c.id, err: err}
 		}
 
 		moved := 0
@@ -346,6 +356,35 @@ func (c *Container) populateRoot(baseDir string) error {
 		return &ContainerError{container: c.id, err: fmt.Errorf("failed to bind tmp dir: %v", err.Error())}
 	}
 
+	return nil
+}
+
+func (c *Container) setCommand() error {
+	switch c.meta.Runtime {
+	case Python:
+		cmd := exec.Command(
+			"chroot", c.rootDir, "python3", "-u",
+			"/runtime/python/server.py", "/host/bootstrap.py", strconv.Itoa(1),
+			strconv.FormatBool(true),
+		)
+		c.cmd = cmd
+	case Node:
+		cmd := exec.Command(
+			"chroot", c.rootDir, "node",
+			"/runtime/node/server.js", "/host/bootstrap.js", strconv.Itoa(1),
+			strconv.FormatBool(true),
+		)
+		c.cmd = cmd
+	case Ruby:
+		cmd := exec.Command(
+			"chroot", c.rootDir, "ruby",
+			"/runtime/ruby/server.rb", "/host/bootstrap.rb", strconv.Itoa(1),
+			strconv.FormatBool(true),
+		)
+		c.cmd = cmd
+	default:
+		return &ContainerError{container: c.id, err: fmt.Errorf("unsupported runtime: %v", c.meta.Runtime)}
+	}
 	return nil
 }
 

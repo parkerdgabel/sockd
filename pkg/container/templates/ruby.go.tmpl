@@ -1,0 +1,29 @@
+{{- define "ruby_bootstrap" -}}
+{{- $meta := .Meta -}}
+{{- $isLeaf := $meta.IsLeaf -}}
+
+require 'fileutils'
+
+{{- range $pkg := $meta.Installs }}
+{{- $path := printf "'/packages/%s/files'" $pkg }}
+if File.exist?({{ $path }})
+  unless $LOAD_PATH.include?({{ $path }})
+    $LOAD_PATH.unshift({{ $path }})
+  end
+end
+{{- end }}
+
+{{- range $mod := $meta.Imports }}
+begin
+  require '{{ $mod }}'
+rescue LoadError => e
+  puts "bootstrap.rb error: #{e}"
+end
+{{- end }}
+
+{{- if $isLeaf }}
+start_web_server()
+{{- else }}
+start_fork_server()
+{{- end }}
+{{- end }}

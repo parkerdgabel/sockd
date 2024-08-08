@@ -78,7 +78,7 @@ func (pool *Pool) NewCgroup() (*Cgroup, error) {
 	}
 
 	groupPath := cg.GroupPath()
-	if err := os.Mkdir(groupPath, 0700); err != nil {
+	if err := syscall.Mkdir(groupPath, 0700); err != nil {
 		return nil, &CgroupError{"Mkdir", err}
 	}
 
@@ -102,7 +102,7 @@ Loop:
 		// 1. upon fresh creation (things that never change, such as max procs)
 		// 2. after it's been recycled (we need to clean things up that change during use)
 		// 3. some things (e.g., memory limits) need to be done in either case, and may
-		//    depend on the needs of the Sandbox; this happens in pool.GetCg (which is
+		//    depend on the needs of the Container; this happens in pool.GetCg (which is
 		//    fed by this function)
 		select {
 		case cg = <-pool.recycled:
@@ -113,12 +113,10 @@ Loop:
 				cg.printf("Unpause failed: %s", err)
 			}
 		default:
-			// t := common.T0("fresh-cgroup")
 			cg, _ = pool.NewCgroup()
 			// TODO: set up Config for max procs, memory limits, etc.
 			cg.WriteInt("pids.max", int64(10))
 			cg.WriteInt("memory.swap.max", int64(0))
-			// t.T1()
 		}
 
 		// add cgroup to ready queue
@@ -154,7 +152,7 @@ func (pool *Pool) RetrieveCgroup(timeout time.Duration) (*Cgroup, error) {
 	case cg := <-pool.ready:
 		return cg, nil
 	case <-time.After(timeout):
-		return nil, fmt.Errorf("timeout waiting to retrieve Cgroup")
+		return nil, &CgroupPoolError{"timeout", fmt.Errorf("timeout waiting for cgroup")}
 	}
 }
 
@@ -190,7 +188,7 @@ func (pool *Pool) printf(format string, args ...any) {
 	log.Printf("%s [CGROUP POOL %s]", strings.TrimRight(msg, "\n"), pool.Name)
 }
 
-// GroupPath returns the path to the Cgroup pool for OpenLambda
+// GroupPath returns the path to the Cgroup pool
 func (pool *Pool) GroupPath() string {
 	return fmt.Sprintf("/sys/fs/cgroup/%s", pool.Name)
 }

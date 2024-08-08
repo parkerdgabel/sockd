@@ -212,7 +212,7 @@ func (cg *Cgroup) GetMemUsageMB() int {
 }
 
 // get mem limit in MB
-func (cg *Cgroup) GetMemLimitMB() int {
+func (cg *Cgroup) MemLimitMB() int {
 	return cg.memLimitMB
 }
 
@@ -228,25 +228,24 @@ func (cg *Cgroup) SetMemLimitMB(mb int) error {
 		return &CgroupError{resource: "memory.max", err: err}
 	}
 
-	// cgroup v1 documentation recommends reading back limit after
+	// documentation recommends reading back limit after
 	// writing, because it is only a suggestion (e.g., may get
 	// rounded to page size).
 	//
 	// we don't have a great way of dealing with this now, so
-	// we'll just panic if it is not within some tolerance
+	// we'll just error if it is not within some tolerance
 	limitRaw, err := os.ReadFile(limitPath)
 	if err != nil {
-		panic(err)
+		return &CgroupError{resource: "memory.max", err: err}
 	}
 	limit, err := strconv.ParseInt(strings.TrimSpace(string(limitRaw)), 10, 64)
 	if err != nil {
-		panic(err)
+		return &CgroupError{resource: "memory.max", err: err}
 	}
 
 	diff := limit - bytes
 	if diff < -1024*1024 || diff > 1024*1024 {
-		panic(fmt.Errorf("tried to set mem limit to %d, but result (%d) was not within 1MB tolerance",
-			bytes, limit))
+		return &CgroupError{resource: "memory.max", err: fmt.Errorf("tried to set mem limit to %d, but result (%d) was not within 1MB tolerance", bytes, limit)}
 	}
 
 	cg.memLimitMB = mb

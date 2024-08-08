@@ -1,0 +1,24 @@
+{{- define "python_bootstrap" -}}
+{{- $meta := .Meta -}}
+{{- $isLeaf := $meta.IsLeaf -}}
+
+{{- range $pkg := $meta.Installs }}
+{{- $path := printf "'/packages/%s/files'" $pkg }}
+if os.path.exists({{ $path }}):
+    if not {{ $path }} in sys.path:
+        sys.path.insert(0, {{ $path }})
+{{- end }}
+
+{{- range $mod := $meta.Imports }}
+try:
+    import {{ $mod }}
+except Exception as e:
+    print('bootstrap.py error:', e)
+{{- end }}
+
+{{- if $isLeaf }}
+web_server()
+{{- else }}
+fork_server()
+{{- end }}
+{{- end }}

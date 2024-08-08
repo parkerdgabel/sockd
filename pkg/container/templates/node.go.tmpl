@@ -1,0 +1,27 @@
+{{- define "node_bootstrap" -}}
+{{- $meta := .Meta -}}
+{{- $isLeaf := $meta.IsLeaf -}}
+
+{{- range $pkg := $meta.Installs }}
+{{- $path := printf "'/packages/%s/files'" $pkg }}
+if (fs.existsSync({{ $path }})) {
+    if (!require.main.paths.includes({{ $path }})) {
+        require.main.paths.unshift({{ $path }});
+    }
+}
+{{- end }}
+
+{{- range $mod := $meta.Imports }}
+try {
+    require('{{ $mod }}');
+} catch (e) {
+    console.error('bootstrap.js error:', e);
+}
+{{- end }}
+
+{{- if $isLeaf }}
+startWebServer();
+{{- else }}
+startForkServer();
+{{- end }}
+{{- end }}

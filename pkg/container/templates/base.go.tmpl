@@ -1,0 +1,18 @@
+{{- define "driver" -}}
+{{- $runtime := .Meta.Runtime -}}
+
+{{- if eq $runtime "python" }}
+    {{ template "python_bootstrap" . }}
+{{- else if eq $runtime "node" }}
+    {{ template "node_bootstrap" . }}
+{{- else if eq $runtime "ruby" }}
+    {{ template "ruby_bootstrap" . }}
+{{- else }}
+    {{- /* Handle unknown runtime */ -}}
+    {{- /* You can add a default template or an error message here */ -}}
+    {{- /* Example: */ -}}
+    {{- /* template "default_bootstrap" . */ -}}
+    {{- /* or */ -}}
+    {{- /* print "Unsupported runtime: " $runtime */ -}}
+{{- end }}
+{{- end }}
