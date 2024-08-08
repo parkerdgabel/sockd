@@ -2,9 +2,9 @@
 
 ''' Python runtime for sock '''
 
-import os, sys, json, traceback, socket, struct
+import os, sys, json, traceback, socket, struct, seccomp, errno
 
-sys.path.append("/usr/local/lib/python3.10/dist-packages")
+# sys.path.append("/usr/local/lib/python3.10/dist-packages")
 
 import tornado.ioloop
 import tornado.web
@@ -12,11 +12,56 @@ import tornado.httpserver
 import tornado.wsgi
 import tornado.netutil
 
-import ol
 
-file_sock_path = "/host/ol.sock"
+
+file_sock_path = "/host/comms.sock"
 file_sock = None
 bootstrap_path = None
+
+
+def err_exit(msg):
+    print(f"{msg}: {os.strerror(errno.errorcode[errno.EINVAL])}", file=sys.stderr)
+    sys.exit(1)
+
+def unshare_namespaces():
+    try:
+        # Unshare UTS, PID, and IPC namespaces
+        os.unshare(os.CLONE_NEWUTS | os.CLONE_NEWPID | os.CLONE_NEWIPC)
+    except OSError as e:
+        err_exit(f"unshare failed: {e}")
+    return 0
+
+def enable_seccomp():
+    # Load the syscalls from the JSON file
+    with open('syscalls.json', 'r') as f:
+        data = json.load(f)
+        calls = data['calls']
+
+    # Initialize the seccomp filter
+    ctx = seccomp.ScmpFilter(seccomp.ActErrno(1))
+
+    # Add rules to allow the specified system calls
+    for call in calls:
+        try:
+            ctx.add_rule(seccomp.ActAllow, seccomp.ScmpSyscall(call))
+        except seccomp.SeccompError as e:
+            return ctypes.c_int(-1)
+
+    # Load the filter into the kernel
+    try:
+        ctx.load()
+    except seccomp.SeccompError as e:
+        return -1
+
+    return 0
+
+def fork():
+    try:
+        res = os.fork()
+        return res
+    except OSError as e:
+        print(f"Fork failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
 def web_server():
     print(f"server.py: start web server on fd: {file_sock.fileno()}")
@@ -115,7 +160,7 @@ def start_container():
     global file_sock
 
     # TODO: if we can get rid of this, we can get rid of the ns module
-    return_val = ol.unshare()
+    return_val = unshare_namespaces()
     assert return_val == 0
 
     # we open a new .sock file in the child, before starting the grand
@@ -162,7 +207,7 @@ def main():
 
     #enable_seccomp if enable-seccomp is not passed
     if len(sys.argv) < 3 or sys.argv[3] == 'true':
-        return_code = ol.enable_seccomp()
+        return_code = enable_seccomp()
         assert return_code >= 0
         print('seccomp enabled')
 

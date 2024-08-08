@@ -1,0 +1,19 @@
+{
+    "name": "nodejs-server",
+    "version": "1.0.0",
+    "description": "A Node.js server translated from a Python script",
+    "main": "server.js",
+    "scripts": {
+      "start": "node server.js"
+    },
+    "dependencies": {
+      "body-parser": "^1.19.0",
+      "express": "^4.17.1",
+      "node-seccomp": "^0.0.2"
+    },
+    "devDependencies": {
+      "eslint": "^7.32.0"
+    },
+    "author": "",
+    "license": "ISC"
+  }
