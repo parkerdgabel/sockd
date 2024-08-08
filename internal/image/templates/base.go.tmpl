@@ -46,4 +46,5 @@ FROM {{ $baseImageName }}:{{ $baseImageVersion }}
   {{- /* Example: */ -}}
   {{- /* RUN echo "Unsupported runtime: $runtime" */ -}}
 {{- end -}}
+LABEL base_image_name="{{ $baseImageName }}" base_image_version="{{ $baseImageVersion }}" runtime="{{ $runtime }}"
 {{- end -}}

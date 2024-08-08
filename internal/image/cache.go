@@ -1,11 +1,14 @@
 package image
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"text/template"
 
 	"github.com/containers/buildah"
 	"github.com/containers/buildah/define"
@@ -13,6 +16,39 @@ import (
 	"github.com/containers/storage"
 	"github.com/containers/storage/pkg/unshare"
 )
+
+const joinKey = "_"
+
+type ContainerfileConfig struct {
+	BaseImageName    string
+	BaseImageVersion string
+	Runtime          string
+}
+
+func (c *ContainerfileConfig) Key() string {
+	return strings.Join([]string{c.BaseImageName, c.BaseImageVersion, c.Runtime}, joinKey)
+}
+
+type containerfileCreator struct {
+	templates *template.Template
+}
+
+func newContainerfileCreator() *containerfileCreator {
+	templates := template.Must(template.ParseGlob("templates/*.tmpl"))
+	return &containerfileCreator{
+		templates: templates,
+	}
+}
+
+func (c *containerfileCreator) CreateContainerfile(config ContainerfileConfig) ([]byte, error) {
+	w := new(bytes.Buffer)
+	if err := c.templates.ExecuteTemplate(w, "driver", config); err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+var containerfileCreatorInstance = newContainerfileCreator()
 
 type ImageCacheError struct {
 	image string
@@ -57,20 +93,20 @@ func (ic *ImageCache) DeleteImage(name string) {
 	delete(ic.images, name)
 }
 
-func (ic *ImageCache) BuildImage(name string) error {
+func (ic *ImageCache) BuildImage(config *ContainerfileConfig) error {
 	if buildah.InitReexec() {
-		return &ImageCacheError{name, errors.New("failed to initialize reexec")}
+		return &ImageCacheError{config.Key(), errors.New("failed to initialize reexec")}
 	}
 	unshare.MaybeReexecUsingUserNamespace(false)
 
 	buildStoreOptions, err := storage.DefaultStoreOptions()
 	if err != nil {
-		return &ImageCacheError{name, err}
+		return &ImageCacheError{config.Key(), err}
 	}
 
 	buildStore, err := storage.GetStore(buildStoreOptions)
 	if err != nil {
-		return &ImageCacheError{name, err}
+		return &ImageCacheError{config.BaseImageName, err}
 	}
 	defer func() {
 		if _, err := buildStore.Shutdown(false); err != nil {
@@ -82,28 +118,32 @@ func (ic *ImageCache) BuildImage(name string) error {
 
 	d, err := os.MkdirTemp("", "")
 	if err != nil {
-		return &ImageCacheError{name, err}
+		return &ImageCacheError{config.Key(), err}
 	}
 	defer os.RemoveAll(d)
-	dockerfile := filepath.Join(d, "Dockerfile")
-	f, err := os.Create(dockerfile)
+	containerfile := filepath.Join(d, "Containerfile")
+	f, err := os.Create(containerfile)
 	if err != nil {
-		return &ImageCacheError{name, err}
+		return &ImageCacheError{config.BaseImageName, err}
 	}
-	fmt.Fprintf(f, "FROM %s\n", name)
+	content, err := containerfileCreatorInstance.CreateContainerfile(*config)
+	if err != nil {
+		return &ImageCacheError{config.Key(), err}
+	}
+	fmt.Fprintf(f, "%s", content)
 	f.Close()
 
-	outputDir := ic.cacheDir + "/" + name
+	outputDir := ic.cacheDir + "/" + config.Key()
 
 	buildOptions := define.BuildOptions{
 		ContextDirectory: d,
 		BuildOutput:      outputDir,
 	}
 
-	_, _, err = imagebuildah.BuildDockerfiles(context.TODO(), buildStore, buildOptions, dockerfile)
+	_, _, err = imagebuildah.BuildDockerfiles(context.TODO(), buildStore, buildOptions, containerfile)
 	if err != nil {
-		return &ImageCacheError{name, err}
+		return &ImageCacheError{config.Key(), err}
 	}
-	ic.images[name] = outputDir
+	ic.images[config.Key()] = outputDir
 	return nil
 }
