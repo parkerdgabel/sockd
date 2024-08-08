@@ -51,7 +51,7 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta) *Container {
+func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta) (*Container, error) {
 	c := &Container{
 		id:         id,
 		rootDir:    rootDir,
@@ -64,21 +64,21 @@ func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir s
 	}
 	if err := c.populateRoot(baseImageDir); err != nil {
 		log.Printf("failed to populate root: %v", err)
-		return nil
+		return nil, err
 	}
 	if err := c.bootstrapCode(); err != nil {
 		log.Printf("failed to bootstrap code: %v", err)
-		return nil
+		return nil, err
 	}
 	if err := c.setCommand(); err != nil {
 		log.Printf("failed to set command: %v", err)
-		return nil
+		return nil, err
 	}
 	if err := c.StartClient(); err != nil {
 		log.Printf("failed to start client: %v", err)
-		return nil
+		return nil, err
 	}
-	return c
+	return c, nil
 }
 
 func (c *Container) ID() string {
@@ -151,8 +151,8 @@ func (c *Container) Destroy() error {
 	return c.decCgRefCount()
 }
 
-func (c *Container) StartContainer() error {
-	c.cmd.SysProcAttr.Chroot = c.rootDir
+func (c *Container) Start() error {
+	// c.cmd.SysProcAttr.Chroot = c.rootDir
 	c.cmd.SysProcAttr.Cloneflags = UNSHARE
 	path := c.cgroup.CgroupProcsPath()
 	fd, err := syscall.Open(path, syscall.O_WRONLY, 0600)

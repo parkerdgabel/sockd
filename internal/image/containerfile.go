@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"parkerdgabel/sockd/pkg/container"
 	"strings"
 	"text/template"
 )
@@ -11,11 +12,11 @@ const joinKey = "_"
 type ContainerfileConfig struct {
 	BaseImageName    string
 	BaseImageVersion string
-	Runtime          string
+	Runtime          container.Runtime
 }
 
 func (c *ContainerfileConfig) Key() string {
-	return strings.Join([]string{c.BaseImageName, c.BaseImageVersion, c.Runtime}, joinKey)
+	return strings.Join([]string{c.BaseImageName, c.BaseImageVersion, string(c.Runtime)}, joinKey)
 }
 
 type containerfileCreator struct {
