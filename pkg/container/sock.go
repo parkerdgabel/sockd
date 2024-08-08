@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"parkerdgabel/sockd/pkg/cgroup"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -50,14 +51,13 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta, cmd *exec.Cmd) *Container {
+func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta) *Container {
 	c := &Container{
 		id:         id,
 		rootDir:    rootDir,
 		codeDir:    codeDir,
 		scratchDir: scratchDir,
 		cgroup:     cgroup,
-		cmd:        cmd,
 		client:     &http.Client{},
 		meta:       meta,
 		children:   make(map[string]*Container),
@@ -68,6 +68,10 @@ func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir s
 	}
 	if err := c.bootstrapCode(); err != nil {
 		log.Printf("failed to bootstrap code: %v", err)
+		return nil
+	}
+	if err := c.setCommand(); err != nil {
+		log.Printf("failed to set command: %v", err)
 		return nil
 	}
 	if err := c.StartClient(); err != nil {
@@ -352,6 +356,35 @@ func (c *Container) populateRoot(baseDir string) error {
 		return &ContainerError{container: c.id, err: fmt.Errorf("failed to bind tmp dir: %v", err.Error())}
 	}
 
+	return nil
+}
+
+func (c *Container) setCommand() error {
+	switch c.meta.Runtime {
+	case Python:
+		cmd := exec.Command(
+			"chroot", c.rootDir, "python3", "-u",
+			"/runtime/python/server.py", "/host/bootstrap.py", strconv.Itoa(1),
+			strconv.FormatBool(true),
+		)
+		c.cmd = cmd
+	case Node:
+		cmd := exec.Command(
+			"chroot", c.rootDir, "node",
+			"/runtime/node/server.js", "/host/bootstrap.js", strconv.Itoa(1),
+			strconv.FormatBool(true),
+		)
+		c.cmd = cmd
+	case Ruby:
+		cmd := exec.Command(
+			"chroot", c.rootDir, "ruby",
+			"/runtime/ruby/server.rb", "/host/bootstrap.rb", strconv.Itoa(1),
+			strconv.FormatBool(true),
+		)
+		c.cmd = cmd
+	default:
+		return &ContainerError{container: c.id, err: fmt.Errorf("unsupported runtime: %v", c.meta.Runtime)}
+	}
 	return nil
 }
 
