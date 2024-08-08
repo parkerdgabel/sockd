@@ -200,6 +200,19 @@ func (c *Container) commsSock() string {
 	return fmt.Sprintf("%s/comms.sock", c.scratchDir)
 }
 
+func (c *Container) Stop() error {
+	if err := c.cgroup.Pause(); err != nil {
+		return &ContainerError{container: c.id, err: err}
+	}
+	if err := c.cgroup.KillAllProcs(); err != nil {
+		return &ContainerError{container: c.id, err: err}
+	}
+	if err := c.cgroup.Release(); err != nil {
+		return &ContainerError{container: c.id, err: err}
+	}
+	return nil
+}
+
 // fork a new process from the Zygote in container, relocate it to be the server in dst
 func (c *Container) Fork(dst *Container) error {
 	spareMB := c.cgroup.MemLimitMB() - c.cgroup.GetMemUsageMB()

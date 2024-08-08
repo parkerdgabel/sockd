@@ -105,3 +105,11 @@ func (m *Manager) StartContainer(id string) error {
 	}
 	return container.Start()
 }
+
+func (m *Manager) StopContainer(id string) error {
+	container, ok := m.GetContainer(id)
+	if !ok {
+		return fmt.Errorf("container not found")
+	}
+	return container.Stop()
+}

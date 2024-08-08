@@ -131,6 +131,9 @@ func handleConnection(conn net.Conn) {
 			response := message.Response{
 				Success: true,
 				Message: fmt.Sprintf("Created container: %s", c.ID()),
+				Payload: message.CreateResponse{
+					Id: c.ID(),
+				},
 			}
 			if err := encoder.Encode(&response); err != nil {
 				log.Printf("Failed to encode response: %v", err)
