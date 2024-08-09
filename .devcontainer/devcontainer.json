@@ -7,7 +7,8 @@
 	"features": {
 		"ghcr.io/devcontainers/features/common-utils:2": {},
 		"ghcr.io/devcontainers/features/github-cli:1": {},
-		"ghcr.io/devcontainers/features/go:1": {}
+		"ghcr.io/devcontainers/features/go:1": {},
+		"ghcr.io/eitsupi/devcontainer-features/go-task:latest": {}
 	},
 	"runArgs": ["--privileged"],
 
@@ -28,7 +29,8 @@
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
 	"remoteUser": "root",
 	"mounts": [
-		 "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind"
+		 "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind",
+		 "source=${localEnv:HOME}/.zshrc,target=/home/vscode/.zshrc,type=bind"
 	],
 
 	"postStartCommand": "git config --global --add safe.directory /workspaces/sockd && mkdir -p /sys/fs/cgroup/init && (xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || true) && sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers  > /sys/fs/cgroup/cgroup.subtree_control && apt-get update && apt-get install libbtrfs-dev libgpgme-dev -y"

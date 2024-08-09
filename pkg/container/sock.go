@@ -51,7 +51,7 @@ type Container struct {
 	children   map[string]*Container
 }
 
-func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta) (*Container, error) {
+func NewContainer(parent *Container, baseImageDir, id, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta) (*Container, error) {
 	c := &Container{
 		id:         id,
 		rootDir:    rootDir,
@@ -70,9 +70,17 @@ func NewContainer(baseImageDir string, id string, rootDir, codeDir, scratchDir s
 		log.Printf("failed to bootstrap code: %v", err)
 		return nil, err
 	}
-	if err := c.setCommand(); err != nil {
-		log.Printf("failed to set command: %v", err)
-		return nil, err
+	if parent != nil {
+		if err := parent.Fork(c); err != nil {
+			log.Printf("failed to fork: %v", err)
+			return nil, err
+		}
+		c.parent = parent
+	} else {
+		if err := c.setCommand(); err != nil {
+			log.Printf("failed to set command: %v", err)
+			return nil, err
+		}
 	}
 	if err := c.StartClient(); err != nil {
 		log.Printf("failed to start client: %v", err)
