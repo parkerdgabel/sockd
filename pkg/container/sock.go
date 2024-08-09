@@ -61,6 +61,7 @@ func NewContainer(parent *Container, baseImageDir, id, rootDir, codeDir, scratch
 		client:     &http.Client{},
 		meta:       meta,
 		children:   make(map[string]*Container),
+		cgRefCount: 1,
 	}
 	if err := c.populateRoot(baseImageDir); err != nil {
 		log.Printf("failed to populate root: %v", err)
