@@ -15,9 +15,8 @@ type bootstrapper struct {
 }
 
 func (b *bootstrapper) bootstrapCode(c *Container) ([]byte, error) {
-	meta := c.meta
 	w := bytes.NewBuffer(nil)
-	if err := b.templates.ExecuteTemplate(w, "driver", meta); err != nil {
+	if err := b.templates.ExecuteTemplate(w, "driver", c); err != nil {
 		return nil, err
 	}
 	return w.Bytes(), nil

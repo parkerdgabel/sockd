@@ -75,6 +75,7 @@ func TestPool_RetrieveCgroup(t *testing.T) {
 	if cgroup.pool != pool {
 		t.Errorf("RetrieveCgroup() returned a cgroup with the wrong pool")
 	}
+	cgroup.Release()
 }
 
 func TestPool_printf(t *testing.T) {

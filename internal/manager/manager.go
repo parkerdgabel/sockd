@@ -89,7 +89,12 @@ func (m *Manager) CreateContainer(meta *container.Meta, name string) (*container
 	if err != nil {
 		return nil, err
 	}
-	container, err := container.NewContainer(dir, id, rootDir, codeDir, scratchDir, cgroup, meta)
+	parent, ok := m.GetContainer(meta.ParentID)
+	if !ok {
+		return nil, fmt.Errorf("parent container not found")
+	}
+
+	container, err := container.NewContainer(parent, dir, id, rootDir, codeDir, scratchDir, cgroup, meta)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ const (
 )
 
 type Meta struct {
+	ParentID         string
 	IsLeaf           bool
 	Installs         []string
 	Imports          []string

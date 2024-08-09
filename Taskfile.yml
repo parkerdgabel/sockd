@@ -1,0 +1,41 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  GREETING: Hello, World!
+  PACKAGE_DIR: ./pkg
+  INTERNAL_DIR: ./internal
+
+tasks:
+  build:
+    cmds:
+      - go build -o ./bin/app ./cmd/...
+  test-all:
+    cmds:
+      - go test ./...
+  test-package:
+    cmds:
+      - go test ./{{.DIR}}/{{.PACKAGE}}
+    vars:
+      DIR: "pkg"
+      PACKAGE: "..."
+  test-package-verbose:
+    cmds:
+      - go test -v ./{{.DIR}}/{{.PACKAGE}}
+    vars:
+      DIR: "pkg"
+      PACKAGE: "..."
+  test-cover:
+    cmds:
+      - go test -cover ./...
+  test-cover-html:
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out
+  test-cover-package:
+    cmds:
+      - go test -cover ./{{.DIR}}/{{.PACKAGE}}
+    vars:
+      DIR: "pkg"
+      PACKAGE: "."

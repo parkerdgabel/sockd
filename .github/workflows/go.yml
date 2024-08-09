@@ -10,12 +10,25 @@ on:
     branches: [ "develop" ]
 
 jobs:
-
-  build:
+  setup:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
+    - name: Install apt dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libbtrfs-dev libgpgme-dev
+    - name: Move cgroup init
+      run: |
+        sudo mkdir -p /sys/fs/cgroup/init
+        sudo xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
+        sudo sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers > /sys/fs/cgroup/cgroup.subtree_control
+  build:
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
@@ -23,6 +36,11 @@ jobs:
 
     - name: Build
       run: go build -v ./...
-
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
     - name: Test
       run: go test -v ./...
