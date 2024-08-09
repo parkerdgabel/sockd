@@ -146,6 +146,25 @@ func handleConnection(conn net.Conn) {
 				return
 			}
 			log.Printf("Deleting container: %s", payload.Id)
+			if err := m.DestroyContainer(payload.Id); err != nil {
+				log.Printf("Failed to delete container: %v", err)
+				response := message.Response{
+					Success: false,
+					Message: err.Error(),
+				}
+				if err := encoder.Encode(&response); err != nil {
+					log.Printf("Failed to encode response: %v", err)
+					return
+				}
+			}
+			response := message.Response{
+				Success: true,
+				Message: fmt.Sprintf("Deleted container: %s", payload.Id),
+			}
+			if err := encoder.Encode(&response); err != nil {
+				log.Printf("Failed to encode response: %v", err)
+				return
+			}
 		case message.CommandStart:
 			payload, ok := msg.Payload.(message.PayloadStart)
 			if !ok {
@@ -179,8 +198,39 @@ func handleConnection(conn net.Conn) {
 				return
 			}
 			log.Printf("Stopping container: %s", payload.Id)
+			if err := m.StopContainer(payload.Id); err != nil {
+				log.Printf("Failed to stop container: %v", err)
+				response := message.Response{
+					Success: false,
+					Message: err.Error(),
+				}
+				if err := encoder.Encode(&response); err != nil {
+					log.Printf("Failed to encode response: %v", err)
+					return
+				}
+			}
+			response := message.Response{
+				Success: true,
+				Message: fmt.Sprintf("Stopped container: %s", payload.Id),
+			}
+			if err := encoder.Encode(&response); err != nil {
+				log.Printf("Failed to encode response: %v", err)
+				return
+			}
 		case message.CommandList:
 			log.Printf("Listing containers")
+			ids := m.ListContainers()
+			response := message.Response{
+				Success: true,
+				Message: fmt.Sprintf("Listed %d containers", len(ids)),
+				Payload: message.ListResponse{
+					Ids: ids,
+				},
+			}
+			if err := encoder.Encode(&response); err != nil {
+				log.Printf("Failed to encode response: %v", err)
+				return
+			}
 		case message.CommandInspect:
 			payload, ok := msg.Payload.(message.PayloadInspect)
 			if !ok {
@@ -202,6 +252,77 @@ func handleConnection(conn net.Conn) {
 				return
 			}
 			log.Printf("Forking container: %s", payload.Id)
+			if err := m.ForkContainer(payload.Id); err != nil {
+				log.Printf("Failed to fork container: %v", err)
+				response := message.Response{
+					Success: false,
+					Message: err.Error(),
+				}
+				if err := encoder.Encode(&response); err != nil {
+					log.Printf("Failed to encode response: %v", err)
+					return
+				}
+			}
+			response := message.Response{
+				Success: true,
+				Message: fmt.Sprintf("Forked container: %s", payload.Id),
+			}
+			if err := encoder.Encode(&response); err != nil {
+				log.Printf("Failed to encode response: %v", err)
+				return
+			}
+		case message.CommandPause:
+			payload, ok := msg.Payload.(message.PayloadPause)
+			if !ok {
+				log.Printf("Invalid payload type: %T", msg.Payload)
+				return
+			}
+			log.Printf("Pausing container: %s", payload.Id)
+			if err := m.PauseContainer(payload.Id); err != nil {
+				log.Printf("Failed to pause container: %v", err)
+				response := message.Response{
+					Success: false,
+					Message: err.Error(),
+				}
+				if err := encoder.Encode(&response); err != nil {
+					log.Printf("Failed to encode response: %v", err)
+					return
+				}
+			}
+			response := message.Response{
+				Success: true,
+				Message: fmt.Sprintf("Paused container: %s", payload.Id),
+			}
+			if err := encoder.Encode(&response); err != nil {
+				log.Printf("Failed to encode response: %v", err)
+				return
+			}
+		case message.CommandUnpause:
+			payload, ok := msg.Payload.(message.PayloadUnpause)
+			if !ok {
+				log.Printf("Invalid payload type: %T", msg.Payload)
+				return
+			}
+			log.Printf("Unpausing container: %s", payload.Id)
+			if err := m.UnpauseContainer(payload.Id); err != nil {
+				log.Printf("Failed to unpause container: %v", err)
+				response := message.Response{
+					Success: false,
+					Message: err.Error(),
+				}
+				if err := encoder.Encode(&response); err != nil {
+					log.Printf("Failed to encode response: %v", err)
+					return
+				}
+			}
+			response := message.Response{
+				Success: true,
+				Message: fmt.Sprintf("Unpaused container: %s", payload.Id),
+			}
+			if err := encoder.Encode(&response); err != nil {
+				log.Printf("Failed to encode response: %v", err)
+				return
+			}
 		default:
 			log.Printf("Unknown command: %s", msg.Command)
 		}
@@ -209,7 +330,7 @@ func handleConnection(conn net.Conn) {
 }
 
 func createContainer(payload message.PayloadCreate) (*container.Container, error) {
-	c, err := m.CreateContainer(payload.BaseImage, payload.BaseImageVersion, &payload.Meta, payload.Name)
+	c, err := m.CreateContainer(&payload.Meta, payload.Name)
 	if err != nil {
 		return nil, err
 	}

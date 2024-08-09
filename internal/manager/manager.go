@@ -65,10 +65,10 @@ func (m *Manager) SetContainer(name string, container *container.Container) {
 	m.containers[name] = container
 }
 
-func (m *Manager) CreateContainer(baseImageName string, baseImageVersion string, meta *container.Meta, name string) (*container.Container, error) {
+func (m *Manager) CreateContainer(meta *container.Meta, name string) (*container.Container, error) {
 	config := &image.ContainerfileConfig{
-		BaseImageName:    baseImageName,
-		BaseImageVersion: baseImageVersion,
+		BaseImageName:    meta.BaseImageName,
+		BaseImageVersion: meta.BaseImageVersion,
 		Runtime:          meta.Runtime,
 	}
 	dir, found := m.imageCache.GetImage(config.Key())
@@ -106,10 +106,66 @@ func (m *Manager) StartContainer(id string) error {
 	return container.Start()
 }
 
+func (m *Manager) ListContainers() []string {
+	m.mapMutex.Lock()
+	defer m.mapMutex.Unlock()
+	containers := make([]string, 0, len(m.containers))
+	for k := range m.containers {
+		containers = append(containers, k)
+	}
+	return containers
+}
+
+func (m *Manager) DestroyContainer(id string) error {
+	container, ok := m.GetContainer(id)
+	if !ok {
+		return fmt.Errorf("container not found")
+	}
+	if err := container.Destroy(); err != nil {
+		return err
+	}
+	m.mapMutex.Lock()
+	defer m.mapMutex.Unlock()
+	delete(m.containers, id)
+	return nil
+}
+
+func (m *Manager) ForkContainer(id string) error {
+	container, ok := m.GetContainer(id)
+	if !ok {
+		return fmt.Errorf("container not found")
+	}
+	dstContainer, err := m.CreateContainer(container.Meta(), "forked")
+	if err != nil {
+		return err
+	}
+	if err := container.Fork(dstContainer); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (m *Manager) StopContainer(id string) error {
 	container, ok := m.GetContainer(id)
 	if !ok {
 		return fmt.Errorf("container not found")
 	}
 	return container.Stop()
+}
+
+func (m *Manager) PauseContainer(id string) error {
+	container, ok := m.GetContainer(id)
+	if !ok {
+		return fmt.Errorf("container not found")
+	}
+	return container.Pause()
+}
+
+func (m *Manager) UnpauseContainer(id string) error {
+	container, ok := m.GetContainer(id)
+	if !ok {
+		return fmt.Errorf("container not found")
+	}
+	return container.Unpause()
 }

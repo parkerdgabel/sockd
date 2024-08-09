@@ -49,10 +49,8 @@ const (
 type RequestPayload interface{}
 
 type PayloadCreate struct {
-	BaseImage        string         `json:"base_image"`
-	BaseImageVersion string         `json:"base_image_version"`
-	Meta             container.Meta `json:"meta"`
-	Name             string         `json:"name"`
+	Meta container.Meta `json:"meta"`
+	Name string         `json:"name"`
 }
 
 type PayloadDelete struct {

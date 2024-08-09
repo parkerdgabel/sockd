@@ -213,6 +213,10 @@ func (c *Container) Stop() error {
 	return nil
 }
 
+func (c *Container) Meta() *Meta {
+	return c.meta
+}
+
 // fork a new process from the Zygote in container, relocate it to be the server in dst
 func (c *Container) Fork(dst *Container) error {
 	spareMB := c.cgroup.MemLimitMB() - c.cgroup.GetMemUsageMB()
