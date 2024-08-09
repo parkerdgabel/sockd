@@ -11,10 +11,12 @@ const (
 )
 
 type Meta struct {
-	IsLeaf     bool
-	Installs   []string
-	Imports    []string
-	Runtime    Runtime
-	MemLimitMB int
-	CPUPercent int
+	IsLeaf           bool
+	Installs         []string
+	Imports          []string
+	Runtime          Runtime
+	MemLimitMB       int
+	CPUPercent       int
+	BaseImageName    string
+	BaseImageVersion string
 }

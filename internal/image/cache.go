@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	strg "parkerdgabel/sockd/internal/storage"
+
 	"github.com/containers/buildah"
 	"github.com/containers/buildah/define"
 	"github.com/containers/buildah/imagebuildah"
@@ -24,24 +26,20 @@ func (e *ImageCacheError) Error() string {
 }
 
 type ImageCache struct {
-	cacheDir string
-	images   map[string]string
+	imageDirs *strg.DirMaker
+	images    map[string]string
 }
 
 func NewImageCache() *ImageCache {
-	cacheDir := os.TempDir()
-	return &ImageCache{
-		cacheDir: cacheDir,
-		images:   make(map[string]string),
+	dirs, err := strg.NewDirMaker("images", strg.STORE_PRIVATE)
+	if err != nil {
+		fmt.Printf("failed to create image cache: %q", err)
+		return nil
 	}
-}
-
-func (ic *ImageCache) CacheDir() string {
-	return ic.cacheDir
-}
-
-func (ic *ImageCache) Close() {
-	os.RemoveAll(ic.cacheDir)
+	return &ImageCache{
+		imageDirs: dirs,
+		images:    make(map[string]string),
+	}
 }
 
 func (ic *ImageCache) GetImage(name string) (string, bool) {
@@ -97,7 +95,7 @@ func (ic *ImageCache) BuildImage(config *ContainerfileConfig) error {
 	fmt.Fprintf(f, "%s", content)
 	f.Close()
 
-	outputDir := ic.cacheDir + "/" + config.Key()
+	outputDir := ic.imageDirs.Make(config.Key())
 
 	buildOptions := define.BuildOptions{
 		ContextDirectory: d,
