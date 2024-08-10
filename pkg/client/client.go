@@ -32,6 +32,7 @@ func WithConn(conn net.Conn) Option {
 }
 
 func (c *Client) Close() error {
+	_, _ = c.CloseConnection()
 	return c.conn.Close()
 }
 
@@ -145,6 +146,26 @@ func (c *Client) Unpause(id string) (*message.Response, error) {
 	req := &message.Request{
 		Command: message.CommandUnpause,
 		Payload: message.PayloadUnpause{Id: id},
+	}
+	res := &message.Response{}
+	err := c.SendReceive(req, res)
+	return res, err
+}
+
+func (c *Client) Shutdown() (*message.Response, error) {
+	req := &message.Request{
+		Command: message.CommandShutdown,
+		Payload: nil,
+	}
+	res := &message.Response{}
+	err := c.SendReceive(req, res)
+	return res, err
+}
+
+func (c *Client) CloseConnection() (*message.Response, error) {
+	req := &message.Request{
+		Command: message.CommandCloseConnection,
+		Payload: nil,
 	}
 	res := &message.Response{}
 	err := c.SendReceive(req, res)

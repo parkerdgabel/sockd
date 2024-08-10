@@ -12,26 +12,26 @@ func init() {
 type ResponsePayload interface{}
 
 type CreateResponse struct {
-	Id string `json:"id"`
+	Id string
 }
 
 type ListResponse struct {
-	Ids []string `json:"ids"`
+	Ids []string
 }
 
 type InspectResponse struct {
-	Id     string `json:"id"`
-	Status string `json:"status"`
+	Id     string
+	Status string
 }
 
 type LogsResponse struct {
-	Id    string `json:"id"`
-	Logs  string `json:"logs"`
-	Error string `json:"error"`
+	Id    string
+	Logs  string
+	Error string
 }
 
 type ForkResponse struct {
-	Id string `json:"id"`
+	Id string
 }
 
 type Response struct {
