@@ -2,6 +2,7 @@ package container
 
 import (
 	"bytes"
+	"embed"
 	"errors"
 	"os"
 	"path/filepath"
@@ -22,10 +23,12 @@ func (b *bootstrapper) bootstrapCode(c *Container) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
+//go:embed templates/*
+var templates embed.FS
+
 func newBootstrapper() *bootstrapper {
-	pattern := filepath.Join("templates", "*.tmpl")
-	templates := template.Must(template.ParseGlob(pattern))
-	return &bootstrapper{templates: templates}
+	t := template.Must(template.ParseFS(templates, "templates/*.tmpl"))
+	return &bootstrapper{templates: t}
 }
 
 var b = newBootstrapper()

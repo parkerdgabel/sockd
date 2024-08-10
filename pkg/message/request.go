@@ -44,6 +44,10 @@ const (
 	CommandPause Command = "pause"
 	// CommandUnpause is used to unpause a container
 	CommandUnpause Command = "unpause"
+	// CommandShutdown is used to shutdown the server
+	CommandShutdown Command = "shutdown"
+	// CommandCloseConnection is used to close the connection
+	CommandCloseConnection Command = "close_connection"
 )
 
 type RequestPayload interface{}

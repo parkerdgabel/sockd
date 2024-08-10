@@ -6,14 +6,17 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"parkerdgabel/sockd/internal/manager"
 	"parkerdgabel/sockd/pkg/container"
 	"parkerdgabel/sockd/pkg/message"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
+var sigChan = make(chan os.Signal, 1)
 var m *manager.Manager = manager.NewManager()
 
 const socketPath = "/var/run/sockd.sock"
@@ -73,6 +76,34 @@ func startDaemon() {
 		listeners = append(listeners, tcpListener)
 		fmt.Printf("Listening on TCP address %s\n", tcpAddr)
 	}
+
+	// Channel to listen for interrupt signals
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// Goroutine to handle shutdown
+	go func() {
+		<-sigChan
+		log.Println("Received shutdown signal, closing listeners")
+
+		// Close all listeners
+		for _, listener := range listeners {
+			if err := listener.Close(); err != nil {
+				log.Printf("Failed to close listener: %v", err)
+			}
+		}
+
+		// Close the manager and destroy the cgroup pool
+		if err := m.Shutdown(); err != nil {
+			log.Printf("Failed to close manager: %v", err)
+		}
+
+		// Delete the Unix socket file
+		if err := os.Remove(socketPath); err != nil {
+			log.Printf("Failed to remove Unix socket file: %v", err)
+		}
+
+		os.Exit(0)
+	}()
 
 	for _, listener := range listeners {
 		go func(l net.Listener) {
@@ -227,6 +258,7 @@ func handleConnection(conn net.Conn) {
 					Ids: ids,
 				},
 			}
+			log.Printf("Listed %d containers", len(ids))
 			if err := encoder.Encode(&response); err != nil {
 				log.Printf("Failed to encode response: %v", err)
 				return
@@ -323,6 +355,13 @@ func handleConnection(conn net.Conn) {
 				log.Printf("Failed to encode response: %v", err)
 				return
 			}
+		case message.CommandShutdown:
+			log.Println("Received shutdown command, closing connection")
+			sigChan <- syscall.SIGINT
+			return
+		case message.CommandCloseConnection:
+			log.Println("Received close connection command, closing connection")
+			return
 		default:
 			log.Printf("Unknown command: %s", msg.Command)
 		}
