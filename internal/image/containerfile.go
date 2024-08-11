@@ -2,6 +2,7 @@ package image
 
 import (
 	"bytes"
+	"embed"
 	"parkerdgabel/sockd/pkg/container"
 	"strings"
 	"text/template"
@@ -23,10 +24,13 @@ type containerfileCreator struct {
 	templates *template.Template
 }
 
+//go:embed templates/*
+var templates embed.FS
+
 func newContainerfileCreator() *containerfileCreator {
-	templates := template.Must(template.ParseGlob("templates/*.tmpl"))
+	t := template.Must(template.ParseFS(templates, "templates/*.tmpl"))
 	return &containerfileCreator{
-		templates: templates,
+		templates: t,
 	}
 }
 

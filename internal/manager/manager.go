@@ -219,8 +219,10 @@ func (m *Manager) Shutdown() error {
 	if err := m.cgroupPool.Destroy(); err != nil {
 		return err
 	}
+
 	if err := m.ppPool.Destroy(); err != nil {
 		return err
 	}
+
 	return nil
 }

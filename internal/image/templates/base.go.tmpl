@@ -24,14 +24,15 @@ RUN bundle install --gemfile /runtime/ruby/Gemfile
 
 {{- define "driver" -}}
 {{- $baseImageName := .BaseImageName -}}
+{{- $baseImageVersion := .BaseImageVersion -}}
 {{- if .BaseImageVersion -}}
   {{- $baseImageVersion := .BaseImageVersion -}}
 {{- else -}}
   {{- $baseImageVersion := "latest" -}}
 {{- end -}}
+{{- $runtime := .Runtime -}}
 COPY runtime/{{ $runtime }} /runtime/{{ $runtime }}
 COPY runtime/syscalls.json /runtime/{{ $runtime }}/syscalls.json
-{{- $runtime := .Runtime -}}
 FROM {{ $baseImageName }}:{{ $baseImageVersion }}
 {{ template "deps" . }}
 {{- if eq $runtime "python" }}
