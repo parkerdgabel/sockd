@@ -3,7 +3,7 @@
 {{- $isLeaf := $meta.IsLeaf -}}
 
 {{- range $pkg := $meta.Installs }}
-{{- $path := printf "'/packages/%s/files'" $pkg }}
+{{- $path := printf "'/packages/%s/files/node_modules'" $pkg }}
 if (fs.existsSync({{ $path }})) {
     if (!require.main.paths.includes({{ $path }})) {
         require.main.paths.unshift({{ $path }});

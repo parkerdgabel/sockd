@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 
 	strg "parkerdgabel/sockd/internal/storage"
@@ -106,6 +109,45 @@ func (ic *ImageCache) BuildImage(config *ContainerfileConfig) error {
 	if err != nil {
 		return &ImageCacheError{config.Key(), err}
 	}
+
+	// PART 2: various files/dirs on top of the extracted image
+	fmt.Printf("\tCreate handler/host/packages/resolve.conf over base image.\n")
+	if err := os.Mkdir(path.Join(outputDir, "handler"), 0700); err != nil {
+		return err
+	}
+
+	if err := os.Mkdir(path.Join(outputDir, "host"), 0700); err != nil {
+		return err
+	}
+
+	if err := os.Mkdir(path.Join(outputDir, "packages"), 0700); err != nil {
+		return err
+	}
+
+	// need this because Docker containers don't have a dns server in /etc/resolv.conf
+	// TODO: make it a config option
+	dnsPath := filepath.Join(outputDir, "etc", "resolv.conf")
+	if err := ioutil.WriteFile(dnsPath, []byte("nameserver 8.8.8.8\n"), 0644); err != nil {
+		return err
+	}
+
+	// PART 3: make /dev/* devices
+	fmt.Printf("\tCreate /dev/(null,random,urandom) over base image.\n")
+	path := filepath.Join(outputDir, "dev", "null")
+	if err := exec.Command("mknod", "-m", "0644", path, "c", "1", "3").Run(); err != nil {
+		return err
+	}
+
+	path = filepath.Join(outputDir, "dev", "random")
+	if err := exec.Command("mknod", "-m", "0644", path, "c", "1", "8").Run(); err != nil {
+		return err
+	}
+
+	path = filepath.Join(outputDir, "dev", "urandom")
+	if err := exec.Command("mknod", "-m", "0644", path, "c", "1", "9").Run(); err != nil {
+		return &ImageCacheError{config.Key(), err}
+	}
+
 	ic.images[config.Key()] = outputDir
 	return nil
 }

@@ -2,6 +2,7 @@ package manager
 
 import (
 	"fmt"
+	"os"
 	"parkerdgabel/sockd/internal/image"
 	"parkerdgabel/sockd/internal/storage"
 	"parkerdgabel/sockd/pkg/cgroup"
@@ -18,6 +19,7 @@ type Manager struct {
 	codeDirs    *storage.DirMaker
 	imageCache  *image.ImageCache
 	cgroupPool  *cgroup.Pool
+	ppPool      *cgroup.Pool
 	mapMutex    sync.Mutex
 	containers  map[string]*container.Container
 }
@@ -41,11 +43,16 @@ func NewManager() *Manager {
 	if err != nil {
 		return nil
 	}
+	ppPool, err := cgroup.NewPool("sockd_pp")
+	if err != nil {
+		return nil
+	}
 	return &Manager{
 		rootDirs:    rootDirs,
 		scratchDirs: scratchDirs,
 		codeDirs:    codeDirs,
 		cgroupPool:  pool,
+		ppPool:      ppPool,
 		imageCache:  image.NewImageCache(),
 		containers:  make(map[string]*container.Container),
 		mapMutex:    sync.Mutex{},
@@ -94,6 +101,10 @@ func (m *Manager) CreateContainer(meta *container.Meta, name string) (*container
 		return nil, fmt.Errorf("parent container not found")
 	}
 
+	if err := m.installPackages(meta, dir); err != nil {
+		return nil, err
+	}
+
 	container, err := container.NewContainer(parent, dir, id, rootDir, codeDir, scratchDir, cgroup, meta)
 	if err != nil {
 		return nil, err
@@ -101,6 +112,28 @@ func (m *Manager) CreateContainer(meta *container.Meta, name string) (*container
 
 	m.SetContainer(id, container)
 	return container, nil
+}
+
+func (m *Manager) installPackages(meta *container.Meta, baseImageDir string) error {
+	for _, pkg := range meta.Installs {
+		ppRootDir := m.rootDirs.Make("pp-" + pkg)
+		cgroup, err := m.ppPool.RetrieveCgroup(time.Duration(1) * time.Second)
+		defer cgroup.Release()
+		if err != nil {
+			return err
+		}
+		puller, err := container.NewPackagePuller(meta, baseImageDir, ppRootDir, cgroup)
+		if err != nil {
+			return err
+		}
+		if _, err := puller.PullPackage(pkg); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(ppRootDir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *Manager) StartContainer(id string) error {
@@ -173,4 +206,14 @@ func (m *Manager) UnpauseContainer(id string) error {
 		return fmt.Errorf("container not found")
 	}
 	return container.Unpause()
+}
+
+func (m *Manager) Destroy() {
+	m.mapMutex.Lock()
+	defer m.mapMutex.Unlock()
+	for _, container := range m.containers {
+		container.Destroy()
+	}
+	m.cgroupPool.Destroy()
+	m.ppPool.Destroy()
 }
