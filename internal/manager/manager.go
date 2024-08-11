@@ -212,9 +212,7 @@ func (m *Manager) Shutdown() error {
 	m.mapMutex.Lock()
 	defer m.mapMutex.Unlock()
 	for _, container := range m.containers {
-		if err := container.Destroy(); err != nil {
-			return err
-		}
+		container.Destroy()
 	}
 	if err := m.cgroupPool.Destroy(); err != nil {
 		return err
