@@ -219,16 +219,10 @@ func (m *Manager) Shutdown() error {
 	if err := m.cgroupPool.Destroy(); err != nil {
 		return err
 	}
-<<<<<<< HEAD
 
 	if err := m.ppPool.Destroy(); err != nil {
 		return err
 	}
 
-=======
-	if err := m.ppPool.Destroy(); err != nil {
-		return err
-	}
->>>>>>> 7f3d2ca (Added .gitignore and modified manager.go)
 	return nil
 }
