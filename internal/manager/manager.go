@@ -208,12 +208,19 @@ func (m *Manager) UnpauseContainer(id string) error {
 	return container.Unpause()
 }
 
-func (m *Manager) Destroy() {
+func (m *Manager) Shutdown() error {
 	m.mapMutex.Lock()
 	defer m.mapMutex.Unlock()
 	for _, container := range m.containers {
-		container.Destroy()
+		if err := container.Destroy(); err != nil {
+			return err
+		}
 	}
-	m.cgroupPool.Destroy()
-	m.ppPool.Destroy()
+	if err := m.cgroupPool.Destroy(); err != nil {
+		return err
+	}
+	if err := m.ppPool.Destroy(); err != nil {
+		return err
+	}
+	return nil
 }
