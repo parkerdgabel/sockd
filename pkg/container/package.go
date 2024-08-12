@@ -45,7 +45,12 @@ type PackageInstaller interface {
 	InstallPackages(pkgs []string) ([]string, error)
 }
 
-func NewPackagePuller(meta *Meta, baseImageDir string, rootDir string, cgroup *cgroup.Cgroup) (PackagePuller, error) {
+type PackagePullerInstaller interface {
+	PackagePuller
+	PackageInstaller
+}
+
+func NewPackagePullerInstaller(meta *Meta, baseImageDir string, rootDir string, cgroup *cgroup.Cgroup) (PackagePullerInstaller, error) {
 	switch meta.Runtime {
 	case Python:
 		m := &Meta{
@@ -83,6 +88,10 @@ type PyPiPullerInstaller struct {
 	baseImageDir  string
 	packageDir    string
 	cgroup        *cgroup.Cgroup
+}
+
+func (p *PyPiPullerInstaller) InstallPackages(pkgs []string) ([]string, error) {
+	return nil, nil
 }
 
 func (p *PyPiPullerInstaller) NormalizePackage(pkg string) string {
