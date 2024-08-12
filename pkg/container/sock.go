@@ -162,7 +162,7 @@ func (c *Container) Destroy() error {
 
 func (c *Container) Start() error {
 	c.cmd.SysProcAttr.Chroot = c.rootDir
-	c.cmd.SysProcAttr.Cloneflags = UNSHARE
+	// c.cmd.SysProcAttr.Cloneflags = UNSHARE
 	path := c.cgroup.CgroupProcsPath()
 	fd, err := syscall.Open(path, syscall.O_WRONLY, 0600)
 	if err != nil {
