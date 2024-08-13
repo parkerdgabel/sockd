@@ -1,8 +1,7 @@
 {{- define "node_bootstrap" -}}
-{{- $meta := .Meta -}}
-{{- $isLeaf := $meta.IsLeaf -}}
+{{- $isLeaf := .IsLeaf -}}
 
-{{- range $pkg := $meta.Installs }}
+{{- range $pkg := .Installs }}
 {{- $path := printf "'/packages/%s/files/node_modules'" $pkg }}
 if (fs.existsSync({{ $path }})) {
     if (!require.main.paths.includes({{ $path }})) {
@@ -11,7 +10,7 @@ if (fs.existsSync({{ $path }})) {
 }
 {{- end }}
 
-{{- range $mod := $meta.Imports }}
+{{- range $mod := .Imports }}
 try {
     require('{{ $mod }}');
 } catch (e) {

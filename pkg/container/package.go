@@ -55,7 +55,7 @@ func NewPackagePullerInstaller(meta *Meta, baseImageDir string, rootDir string, 
 	case Python:
 		m := &Meta{
 			Runtime:  Python,
-			IsLeaf:   true,
+			isLeaf:   true,
 			ParentID: "",
 		}
 		pipLambdaDir := filepath.Join(baseImageDir, "admin-lambdas", "pip-lambda")

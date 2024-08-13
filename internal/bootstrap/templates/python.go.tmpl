@@ -1,15 +1,14 @@
 {{- define "python_bootstrap" -}}
-{{- $meta := .Meta -}}
-{{- $isLeaf := $meta.IsLeaf -}}
+{{- $isLeaf := .IsLeaf -}}
 
-{{- range $pkg := $meta.Installs }}
+{{- range $pkg := .Installs }}
 {{- $path := printf "'/packages/%s/files'" $pkg }}
 if os.path.exists({{ $path }}):
     if not {{ $path }} in sys.path:
         sys.path.insert(0, {{ $path }})
 {{- end }}
 
-{{- range $mod := $meta.Imports }}
+{{- range $mod := .Imports }}
 try:
     import {{ $mod }}
 except Exception as e:

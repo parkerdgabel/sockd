@@ -134,7 +134,7 @@ func (ic *importCache) createContainerInNode(node *importCacheNode, meta *contai
 	if node.parent != nil {
 		c, err = ic.createChildContainerFromNode(node)
 	} else {
-		node.meta.IsLeaf = false
+		node.meta = node.meta.MakeZygote()
 		id := uuid.NewString()
 		rootDir := ic.rootDirs.Make("import-cache-" + id)
 		scratchDir := ic.scratchDirs.Make("import-cache")
@@ -170,7 +170,7 @@ func (ic *importCache) createChildContainerFromNode(node *importCacheNode) (*con
 		}
 		c, err := container.NewContainer(zygote, ic.baseImageDir, id, rootDir, node.codeDir, scratchDir, cgroup, node.meta)
 		if err == nil {
-			if node.meta.IsLeaf {
+			if !node.meta.IsZgote() {
 				atomic.AddInt64(&node.createLeafChild, 1)
 			} else {
 				atomic.AddInt64(&node.createNonleafChild, 1)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"parkerdgabel/sockd/internal/bootstrap"
 	"parkerdgabel/sockd/pkg/cgroup"
 	"path/filepath"
 	"strconv"
@@ -380,6 +381,29 @@ func (c *Container) populateRoot(baseDir string) error {
 	sbTmpDir := filepath.Join(c.rootDir, "tmp")
 	if err := syscall.Mount(tmpDir, sbTmpDir, "", BIND, ""); err != nil {
 		return &ContainerError{container: c.id, err: fmt.Errorf("failed to bind tmp dir: %v", err.Error())}
+	}
+
+	return nil
+}
+
+func (c *Container) bootstrapCode() error {
+	bootstrapCode, err := bootstrap.BootstrapCode(c.meta.isLeaf, c.meta.Installs, c.meta.Imports, string(c.meta.Runtime))
+	if err != nil {
+		return &ContainerError{container: c.id, err: fmt.Errorf("failed to generate bootstrap code: %v", err)}
+	}
+	var bootstrapPath string
+	switch c.meta.Runtime {
+	case Python:
+		bootstrapPath = filepath.Join(c.rootDir, "bootstrap.py")
+	case Node:
+		bootstrapPath = filepath.Join(c.rootDir, "bootstrap.js")
+	case Ruby:
+		bootstrapPath = filepath.Join(c.rootDir, "bootstrap.rb")
+	default:
+		return &ContainerError{container: c.id, err: fmt.Errorf("unsupported runtime: %v", c.meta.Runtime)}
+	}
+	if err := os.WriteFile(bootstrapPath, bootstrapCode, 0777); err != nil {
+		return &ContainerError{container: c.id, err: fmt.Errorf("failed to write bootstrap code: %v", err)}
 	}
 
 	return nil

@@ -12,7 +12,6 @@ const (
 
 type Meta struct {
 	ParentID         string
-	IsLeaf           bool
 	Installs         []string
 	Imports          []string
 	Runtime          Runtime
@@ -20,4 +19,14 @@ type Meta struct {
 	CPUPercent       int
 	BaseImageName    string
 	BaseImageVersion string
+	isLeaf           bool
+}
+
+func (m *Meta) IsZgote() bool {
+	return !m.isLeaf
+}
+
+func (m *Meta) MakeZygote() *Meta {
+	m.isLeaf = false
+	return m
 }

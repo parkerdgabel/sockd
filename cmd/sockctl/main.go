@@ -101,7 +101,7 @@ func newCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&name, "name", "", "Container name")
 	cmd.Flags().StringVar(&meta.ParentID, "parent-id", "", "Parent container ID")
-	cmd.Flags().BoolVar(&meta.IsLeaf, "is-leaf", false, "Is this a leaf container")
+	// cmd.Flags().BoolVar(&meta.IsLeaf, "is-leaf", false, "Is this a leaf container")
 	cmd.Flags().StringSliceVar(&meta.Installs, "installs", nil, "List of installs")
 	cmd.Flags().StringSliceVar(&meta.Imports, "imports", nil, "List of imports")
 	cmd.Flags().StringVar((*string)(&meta.Runtime), "runtime", "", "Container runtime")
