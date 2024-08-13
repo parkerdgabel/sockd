@@ -74,7 +74,7 @@ func (icn *importCacheNode) Create(meta *container.Meta, baseImageDir string, co
 	return nil, nil
 }
 
-func (ic *importCache) getContainerInNode(node *importCacheNode, forceNew bool, meta *container.Meta) (*container.Container, bool, error) {
+func (ic *importCache) getContainerInNode(node *importCacheNode, forceNew bool) (*container.Container, bool, error) {
 	node.mutex.Lock()
 	defer node.mutex.Unlock()
 
@@ -96,10 +96,16 @@ func (ic *importCache) getContainerInNode(node *importCacheNode, forceNew bool, 
 		return node.container, false, nil
 	}
 
-	return nil, false, nil
+	// SLOW PATH
+	if err := ic.createContainerInNode(node); err != nil {
+		return nil, false, err
+	}
+	node.sbRefCount = 1
+
+	return node.container, true, nil
 }
 
-func (ic *importCache) createContainerInNode(node *importCacheNode, meta *container.Meta) error {
+func (ic *importCache) createContainerInNode(node *importCacheNode) error {
 	// populate codeDir/packages with deps, and record top-level mods)
 	if node.codeDir == "" {
 		codeDir := ic.codeDirs.Make("import-cache")
@@ -130,9 +136,15 @@ func (ic *importCache) createContainerInNode(node *importCacheNode, meta *contai
 	}
 
 	var c *container.Container
-	var err error
 	if node.parent != nil {
-		c, err = ic.createChildContainerFromNode(node)
+		c, err := ic.createChildContainerFromNode(node)
+		if err != nil {
+			return err
+		}
+		if c != nil {
+			node.container = c
+			return nil
+		}
 	} else {
 		node.meta = node.meta.MakeZygote()
 		id := uuid.NewString()
@@ -143,10 +155,9 @@ func (ic *importCache) createContainerInNode(node *importCacheNode, meta *contai
 			return err
 		}
 		c, err = container.NewContainer(nil, ic.baseImageDir, id, rootDir, node.codeDir, scratchDir, cgroup, node.meta)
-	}
-
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
 	node.container = c
@@ -157,7 +168,7 @@ func (ic *importCache) createChildContainerFromNode(node *importCacheNode) (*con
 	// try twice, restarting parent Sandbox if it fails the first time
 	forceNew := false
 	for i := 0; i < 2; i++ {
-		zygote, isNew, err := ic.getContainerInNode(node.parent, forceNew, node.meta)
+		zygote, isNew, err := ic.getContainerInNode(node.parent, forceNew)
 		if err != nil {
 			return nil, err
 		}
