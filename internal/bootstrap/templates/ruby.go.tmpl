@@ -1,10 +1,9 @@
 {{- define "ruby_bootstrap" -}}
-{{- $meta := .Meta -}}
-{{- $isLeaf := $meta.IsLeaf -}}
+{{- $isLeaf := .IsLeaf -}}
 
 require 'fileutils'
 
-{{- range $pkg := $meta.Installs }}
+{{- range $pkg := .Installs }}
 {{- $path := printf "'/packages/%s/files'" $pkg }}
 if File.exist?({{ $path }})
   unless $LOAD_PATH.include?({{ $path }})
@@ -13,7 +12,7 @@ if File.exist?({{ $path }})
 end
 {{- end }}
 
-{{- range $mod := $meta.Imports }}
+{{- range $mod := .Imports }}
 begin
   require '{{ $mod }}'
 rescue LoadError => e

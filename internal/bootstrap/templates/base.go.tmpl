@@ -1,5 +1,5 @@
 {{- define "driver" -}}
-{{- $runtime := .Meta.Runtime -}}
+{{- $runtime := .Runtime -}}
 
 {{- if eq $runtime "python" }}
     {{ template "python_bootstrap" . }}

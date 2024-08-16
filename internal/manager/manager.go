@@ -2,24 +2,26 @@ package manager
 
 import (
 	"fmt"
+	"os"
 	"parkerdgabel/sockd/internal/image"
 	"parkerdgabel/sockd/internal/storage"
 	"parkerdgabel/sockd/pkg/cgroup"
 	"parkerdgabel/sockd/pkg/container"
+	"parkerdgabel/sockd/pkg/zygote"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Manager struct {
-	rootDirs    *storage.DirMaker
-	scratchDirs *storage.DirMaker
-	codeDirs    *storage.DirMaker
-	imageCache  *image.ImageCache
-	cgroupPool  *cgroup.Pool
-	mapMutex    sync.Mutex
-	containers  map[string]*container.Container
+	rootDirs        *storage.DirMaker
+	scratchDirs     *storage.DirMaker
+	codeDirs        *storage.DirMaker
+	imageCache      *image.ImageCache
+	cgroupPool      *cgroup.Pool
+	ppPool          *cgroup.Pool
+	mapMutex        sync.Mutex
+	containers      map[string]*container.Container
+	zygoteProviders map[string]zygote.Provider
 }
 
 func NewManager() *Manager {
@@ -41,14 +43,21 @@ func NewManager() *Manager {
 	if err != nil {
 		return nil
 	}
+	ppPool, err := cgroup.NewPool("sockd_pp")
+	if err != nil {
+		return nil
+	}
+	zygoteProviders := make(map[string]zygote.Provider)
 	return &Manager{
-		rootDirs:    rootDirs,
-		scratchDirs: scratchDirs,
-		codeDirs:    codeDirs,
-		cgroupPool:  pool,
-		imageCache:  image.NewImageCache(),
-		containers:  make(map[string]*container.Container),
-		mapMutex:    sync.Mutex{},
+		rootDirs:        rootDirs,
+		scratchDirs:     scratchDirs,
+		codeDirs:        codeDirs,
+		cgroupPool:      pool,
+		ppPool:          ppPool,
+		imageCache:      image.NewImageCache(),
+		containers:      make(map[string]*container.Container),
+		mapMutex:        sync.Mutex{},
+		zygoteProviders: zygoteProviders,
 	}
 }
 
@@ -81,26 +90,69 @@ func (m *Manager) CreateContainer(meta *container.Meta, name string) (*container
 			return nil, fmt.Errorf("failed to build image")
 		}
 	}
-	id := uuid.New().String()
-	rootDir := m.rootDirs.Make(id)
-	scratchDir := m.scratchDirs.Make(id)
-	codeDir := m.codeDirs.Make(id)
-	cgroup, err := m.cgroupPool.RetrieveCgroup(time.Duration(1) * time.Second)
+	provider, found := m.zygoteProviders[config.Key()]
+	if !found {
+		ppCgroup, err := m.ppPool.RetrieveCgroup(time.Duration(1) * time.Second)
+		if err != nil {
+			return nil, err
+		}
+		pullerInstaller, err := container.NewPackagePullerInstaller(meta, dir, m.rootDirs.Make("pp-"+config.Key()), ppCgroup)
+		if err != nil {
+			return nil, err
+		}
+		provider = zygote.NewProvider(m.rootDirs, m.codeDirs, m.scratchDirs, dir, m.cgroupPool, pullerInstaller)
+		m.zygoteProviders[config.Key()] = provider
+	}
+	c, err := provider.ProvideZygote(name, meta)
 	if err != nil {
 		return nil, err
 	}
-	parent, ok := m.GetContainer(meta.ParentID)
-	if !ok {
-		return nil, fmt.Errorf("parent container not found")
-	}
+	// id := uuid.New().String()
+	// rootDir := m.rootDirs.Make(id)
+	// scratchDir := m.scratchDirs.Make(id)
+	// codeDir := m.codeDirs.Make(id)
+	// cgroup, err := m.cgroupPool.RetrieveCgroup(time.Duration(1) * time.Second)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// parent, ok := m.GetContainer(meta.ParentID)
+	// if !ok {
+	// 	return nil, fmt.Errorf("parent container not found")
+	// }
 
-	container, err := container.NewContainer(parent, dir, id, rootDir, codeDir, scratchDir, cgroup, meta)
-	if err != nil {
-		return nil, err
-	}
+	// if err := m.installPackages(meta, dir); err != nil {
+	// 	return nil, err
+	// }
 
-	m.SetContainer(id, container)
-	return container, nil
+	// container, err := container.NewContainer(parent, dir, id, rootDir, codeDir, scratchDir, cgroup, meta)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	m.SetContainer(c.ID(), c)
+	return c, nil
+}
+
+func (m *Manager) installPackages(meta *container.Meta, baseImageDir string) error {
+	for _, pkg := range meta.Installs {
+		ppRootDir := m.rootDirs.Make("pp-" + pkg)
+		cgroup, err := m.ppPool.RetrieveCgroup(time.Duration(1) * time.Second)
+		defer cgroup.Release()
+		if err != nil {
+			return err
+		}
+		puller, err := container.NewPackagePullerInstaller(meta, baseImageDir, ppRootDir, cgroup)
+		if err != nil {
+			return err
+		}
+		if _, err := puller.PullPackage(pkg); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(ppRootDir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *Manager) StartContainer(id string) error {
@@ -186,5 +238,10 @@ func (m *Manager) Shutdown() error {
 	if err := m.cgroupPool.Destroy(); err != nil {
 		return err
 	}
+
+	if err := m.ppPool.Destroy(); err != nil {
+		return err
+	}
+
 	return nil
 }
