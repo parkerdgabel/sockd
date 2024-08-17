@@ -3,6 +3,7 @@ package manager
 import (
 	"fmt"
 	"os"
+	"parkerdgabel/sockd/internal/code"
 	"parkerdgabel/sockd/internal/image"
 	"parkerdgabel/sockd/internal/storage"
 	"parkerdgabel/sockd/pkg/cgroup"
@@ -89,6 +90,13 @@ func (m *Manager) CreateContainer(meta *container.Meta, name string) (*container
 		if !found {
 			return nil, fmt.Errorf("failed to build image")
 		}
+	}
+	if meta.CodeUrl == "" {
+		return nil, fmt.Errorf("code url not found")
+	}
+
+	if err := code.PullCode(meta.CodeUrl, m.codeDirs.Make(name)); err != nil {
+		return nil, err
 	}
 	provider, found := m.zygoteProviders[config.Key()]
 	if !found {

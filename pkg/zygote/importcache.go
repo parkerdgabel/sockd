@@ -181,7 +181,7 @@ func (ic *importCache) createChildContainerFromNode(node *importCacheNode) (*con
 		}
 		c, err := container.NewContainer(zygote, ic.baseImageDir, id, rootDir, node.codeDir, scratchDir, cgroup, node.meta)
 		if err == nil {
-			if !node.meta.IsZgote() {
+			if !node.meta.IsZygote() {
 				atomic.AddInt64(&node.createLeafChild, 1)
 			} else {
 				atomic.AddInt64(&node.createNonleafChild, 1)
