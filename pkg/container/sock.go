@@ -19,6 +19,24 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type ContainerEventType int
+
+const (
+	ContainerStart ContainerEventType = iota
+	ContainerStop
+	ContainerPause
+	ContainerUnpause
+	ContainerDestroy
+	ContainerFork
+	ContainerChildExit
+)
+
+type ContainerEventHandler func(event ContainerEventType, container *Container)
+
+type ContainerEvent struct {
+	Event     ContainerEventType
+	Container *Container
+}
 type ContainerError struct {
 	container string
 	err       error
@@ -47,22 +65,24 @@ type Container struct {
 	// until all descendants are dead, because they share the
 	// pages of this Container, but this is the only container
 	// charged)
-	cgRefCount int32
-	parent     *Container
-	children   map[string]*Container
+	cgRefCount    int32
+	parent        *Container
+	children      map[string]*Container
+	eventHandlers []ContainerEventHandler
 }
 
-func NewContainer(parent *Container, baseImageDir, id, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta) (*Container, error) {
+func NewContainer(parent *Container, baseImageDir, id, rootDir, codeDir, scratchDir string, cgroup *cgroup.Cgroup, meta *Meta, listeners []ContainerEventHandler) (*Container, error) {
 	c := &Container{
-		id:         id,
-		rootDir:    rootDir,
-		codeDir:    codeDir,
-		scratchDir: scratchDir,
-		cgroup:     cgroup,
-		client:     &http.Client{},
-		meta:       meta,
-		children:   make(map[string]*Container),
-		cgRefCount: 1,
+		id:            id,
+		rootDir:       rootDir,
+		codeDir:       codeDir,
+		scratchDir:    scratchDir,
+		cgroup:        cgroup,
+		client:        &http.Client{},
+		meta:          meta,
+		children:      make(map[string]*Container),
+		cgRefCount:    1,
+		eventHandlers: listeners,
 	}
 	if err := c.populateRoot(baseImageDir); err != nil {
 		log.Printf("failed to populate root: %v", err)
@@ -88,6 +108,7 @@ func NewContainer(parent *Container, baseImageDir, id, rootDir, codeDir, scratch
 		log.Printf("failed to start client: %v", err)
 		return nil, err
 	}
+	c.notifyListeners(ContainerStart)
 	return c, nil
 }
 
@@ -158,6 +179,7 @@ func (c *Container) Destroy() error {
 	if err := c.cgroup.Pause(); err != nil {
 		return &ContainerError{container: c.id, err: err}
 	}
+	c.notifyListeners(ContainerDestroy)
 	return c.decCgRefCount()
 }
 
@@ -174,6 +196,7 @@ func (c *Container) Start() error {
 	if err := c.cmd.Start(); err != nil {
 		return &ContainerError{container: c.id, err: fmt.Errorf("failed to start container: %v", err)}
 	}
+	c.notifyListeners(ContainerStart)
 	return c.cmd.Wait() // Command passed in is expected to fork and exec
 }
 
@@ -189,6 +212,7 @@ func (c *Container) Pause() error {
 		}
 	}
 	c.client.CloseIdleConnections()
+	c.notifyListeners(ContainerPause)
 	return nil
 }
 
@@ -203,6 +227,7 @@ func (c *Container) Unpause() error {
 	if err := c.cgroup.Unpause(); err != nil {
 		return &ContainerError{container: c.id, err: err}
 	}
+	c.notifyListeners(ContainerUnpause)
 	return nil
 }
 
@@ -220,6 +245,7 @@ func (c *Container) Stop() error {
 	if err := c.cgroup.Release(); err != nil {
 		return &ContainerError{container: c.id, err: err}
 	}
+	c.notifyListeners(ContainerStop)
 	return nil
 }
 
@@ -301,7 +327,7 @@ func (c *Container) Fork(dst *Container) error {
 			break
 		}
 	}
-
+	c.notifyListeners(ContainerFork)
 	return nil
 }
 
@@ -337,6 +363,7 @@ func (c *Container) decCgRefCount() error {
 
 func (c *Container) childExit(child *Container) error {
 	delete(c.children, child.ID())
+	c.notifyListeners(ContainerChildExit)
 	return c.decCgRefCount()
 }
 
@@ -384,6 +411,16 @@ func (c *Container) populateRoot(baseDir string) error {
 	}
 
 	return nil
+}
+
+func (c *Container) AddEventHandler(handler ContainerEventHandler) {
+	c.eventHandlers = append(c.eventHandlers, handler)
+}
+
+func (c *Container) notifyListeners(event ContainerEventType) {
+	for _, handler := range c.eventHandlers {
+		handler(event, c)
+	}
 }
 
 func (c *Container) bootstrapCode() error {

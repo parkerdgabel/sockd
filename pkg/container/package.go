@@ -150,7 +150,7 @@ func (p *PyPiPullerInstaller) sandboxInstall(pa *Package) error {
 		return err
 	}
 
-	container, err := NewContainer(nil, p.baseImageDir, uuid.New().String(), p.rootDir, p.pipLambdaDir, scratchDir, p.cgroup, p.containerMeta)
+	container, err := NewContainer(nil, p.baseImageDir, uuid.New().String(), p.rootDir, p.pipLambdaDir, scratchDir, p.cgroup, p.containerMeta, nil)
 	if err != nil {
 		return err
 	}

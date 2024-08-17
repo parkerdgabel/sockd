@@ -23,6 +23,7 @@ type importCache struct {
 	root            *importCacheNode
 	cgroupPool      *cgroup.Pool
 	pullerInstaller container.PackagePullerInstaller
+	listeners       []container.ContainerEventHandler
 }
 
 func newImportCache(rootDirs, codeDirs, scratchDirs *storage.DirMaker, baseImageDir string, cgroupPool *cgroup.Pool, pullerInstaller container.PackagePullerInstaller) *importCache {
@@ -34,6 +35,7 @@ func newImportCache(rootDirs, codeDirs, scratchDirs *storage.DirMaker, baseImage
 		root:            &importCacheNode{},
 		cgroupPool:      cgroupPool,
 		pullerInstaller: pullerInstaller,
+		listeners:       []container.ContainerEventHandler{},
 	}
 }
 
@@ -154,7 +156,7 @@ func (ic *importCache) createContainerInNode(node *importCacheNode) error {
 		if err != nil {
 			return err
 		}
-		c, err = container.NewContainer(nil, ic.baseImageDir, id, rootDir, node.codeDir, scratchDir, cgroup, node.meta)
+		c, err = container.NewContainer(nil, ic.baseImageDir, id, rootDir, node.codeDir, scratchDir, cgroup, node.meta, ic.listeners)
 		if err != nil {
 			return err
 		}
@@ -179,7 +181,7 @@ func (ic *importCache) createChildContainerFromNode(node *importCacheNode) (*con
 		if err != nil {
 			return nil, err
 		}
-		c, err := container.NewContainer(zygote, ic.baseImageDir, id, rootDir, node.codeDir, scratchDir, cgroup, node.meta)
+		c, err := container.NewContainer(zygote, ic.baseImageDir, id, rootDir, node.codeDir, scratchDir, cgroup, node.meta, ic.listeners)
 		if err == nil {
 			if !node.meta.IsZygote() {
 				atomic.AddInt64(&node.createLeafChild, 1)
@@ -245,4 +247,8 @@ func (icn *importCacheNode) Lookup(pkgs []string) *importCacheNode {
 	}
 
 	return icn
+}
+
+func (ic *importCache) addListener(l container.ContainerEventHandler) {
+	ic.listeners = append(ic.listeners, l)
 }
