@@ -19,10 +19,11 @@ type Meta struct {
 	CPUPercent       int
 	BaseImageName    string
 	BaseImageVersion string
+	CodeUrl          string
 	isLeaf           bool
 }
 
-func (m *Meta) IsZgote() bool {
+func (m *Meta) IsZygote() bool {
 	return !m.isLeaf
 }
 
